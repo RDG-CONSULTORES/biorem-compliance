@@ -1,0 +1,56 @@
+# FastAPI y servidor
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# Base de datos
+sqlalchemy==2.0.25
+asyncpg==0.29.0
+psycopg2-binary==2.9.9
+alembic==1.13.1
+
+# Configuración
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# Telegram Bot
+python-telegram-bot==21.0.1
+
+# Anthropic (Claude Vision)
+anthropic==0.18.1
+
+# Scheduler para recordatorios
+apscheduler==3.10.4
+
+# Autenticación
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# HTTP client
+httpx==0.26.0
+aiohttp==3.9.3
+
+# Utilidades
+python-dateutil==2.8.2
+pytz==2024.1
+
+# Storage
+boto3==1.34.34  # Para S3/R2
+aiofiles==23.2.1
+
+# Validación de imágenes
+pillow==10.2.0
+
+# Testing
+pytest==8.0.0
+pytest-asyncio==0.23.4
+pytest-cov==4.1.0
+
+# Linting y formateo (dev)
+black==24.1.1
+isort==5.13.2
+flake8==7.0.0
+mypy==1.8.0
+
+# Variables de entorno
+python-dotenv==1.0.1

@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # Base de datos PostgreSQL
+  db:
+    image: postgres:16-alpine
+    container_name: biorem-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-biorem}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Backend FastAPI
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: biorem-backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/biorem
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - DEBUG=${DEBUG:-true}
+      - ENVIRONMENT=development
+    volumes:
+      - ./backend:/app
+      - ./storage:/app/storage
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Redis (para cache y colas - opcional)
+  redis:
+    image: redis:7-alpine
+    container_name: biorem-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # Adminer (interfaz web para PostgreSQL - desarrollo)
+  adminer:
+    image: adminer:latest
+    container_name: biorem-adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    restart: unless-stopped
+    profiles:
+      - dev
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  default:
+    name: biorem-network
