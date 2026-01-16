@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import Optional
 from functools import lru_cache
 
@@ -13,11 +13,19 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
 
-    # Base de datos
+    # Base de datos (Railway provee DATABASE_URL automáticamente)
     DATABASE_URL: str = Field(
         default="postgresql+asyncpg://postgres:postgres@localhost:5432/biorem",
         description="URL de conexión a PostgreSQL"
     )
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def convert_database_url(cls, v: str) -> str:
+        """Convierte la URL de Railway a formato asyncpg."""
+        if v and v.startswith("postgresql://"):
+            return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return v
 
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str = Field(
@@ -66,10 +74,18 @@ class Settings(BaseSettings):
     )
 
     # CORS (para el frontend)
-    CORS_ORIGINS: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:5173"],
-        description="Orígenes permitidos para CORS"
+    # Puede ser string separado por comas o lista
+    CORS_ORIGINS: str = Field(
+        default="http://localhost:3000,http://localhost:5173",
+        description="Orígenes permitidos para CORS (separados por coma)"
     )
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """Retorna CORS_ORIGINS como lista."""
+        if isinstance(self.CORS_ORIGINS, list):
+            return self.CORS_ORIGINS
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     class Config:
         env_file = ".env"

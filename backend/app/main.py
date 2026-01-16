@@ -21,16 +21,15 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     logger.info(f"Environment: {settings.ENVIRONMENT}")
 
-    # Crear tablas si no existen (solo en desarrollo)
-    if settings.DEBUG:
-        async with async_engine.begin() as conn:
-            # Importar todos los modelos para que SQLAlchemy los conozca
-            from app.models import (
-                Client, Location, Contact, Product,
-                ScheduledReminder, ComplianceRecord, NotificationLog
-            )
-            await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database tables created/verified")
+    # Crear tablas si no existen
+    async with async_engine.begin() as conn:
+        # Importar todos los modelos para que SQLAlchemy los conozca
+        from app.models import (
+            Client, Location, Contact, Product,
+            ScheduledReminder, ComplianceRecord, NotificationLog
+        )
+        await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created/verified")
 
     # Iniciar bot de Telegram
     telegram_app = None
@@ -77,7 +76,7 @@ app = FastAPI(
 # Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
