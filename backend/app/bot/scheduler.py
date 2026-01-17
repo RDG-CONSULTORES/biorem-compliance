@@ -155,6 +155,33 @@ async def send_pending_reminders():
         await db.commit()
 
 
+async def send_reminder_immediately(reminder_id: int) -> bool:
+    """
+    Envía un recordatorio inmediatamente.
+
+    Útil para el botón "Enviar ahora" en la UI.
+    Retorna True si se envió correctamente, False si falló.
+    """
+    if not bot:
+        logger.error("Bot not initialized, cannot send immediate reminder")
+        return False
+
+    async with await get_db_session() as db:
+        result = await db.execute(
+            select(ScheduledReminder).where(ScheduledReminder.id == reminder_id)
+        )
+        reminder = result.scalar_one_or_none()
+
+        if not reminder:
+            logger.error(f"Reminder {reminder_id} not found")
+            return False
+
+        await send_reminder(reminder, db)
+        await db.commit()
+
+        return reminder.status == ReminderStatus.SENT
+
+
 async def send_reminder(reminder: ScheduledReminder, db: AsyncSession):
     """Envía un recordatorio específico."""
     try:

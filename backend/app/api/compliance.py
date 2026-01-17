@@ -181,14 +181,15 @@ async def list_reminders(
 @router.post("/reminders", response_model=ReminderResponse, status_code=201)
 async def create_reminder(
     reminder_data: ReminderCreate,
+    send_now: bool = Query(True, description="Enviar inmediatamente"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Crea un recordatorio manual."""
+    """Crea un recordatorio manual y opcionalmente lo envía inmediatamente."""
     import logging
     logger = logging.getLogger(__name__)
 
     try:
-        logger.info(f"Creating reminder: {reminder_data}")
+        logger.info(f"Creating reminder: {reminder_data}, send_now={send_now}")
 
         # Verificar ubicación
         result = await db.execute(
@@ -229,6 +230,20 @@ async def create_reminder(
         await db.refresh(reminder)
 
         logger.info(f"Reminder created with id: {reminder.id}")
+
+        # Enviar inmediatamente si se solicita
+        if send_now:
+            try:
+                from app.bot.scheduler import send_reminder_immediately
+                sent = await send_reminder_immediately(reminder.id)
+                if sent:
+                    logger.info(f"Reminder {reminder.id} sent immediately")
+                    await db.refresh(reminder)  # Refrescar para obtener el status actualizado
+                else:
+                    logger.warning(f"Failed to send reminder {reminder.id} immediately")
+            except Exception as e:
+                logger.error(f"Error sending reminder immediately: {e}")
+                # No fallar la creación, el scheduler lo enviará después
 
         return ReminderResponse.model_validate(reminder)
     except HTTPException:
