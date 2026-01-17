@@ -48,13 +48,27 @@ async def validate_compliance_photo(
     """
     start_time = time.time()
 
+    # Verificar que la API key esté configurada
+    if not settings.ANTHROPIC_API_KEY:
+        logger.error("ANTHROPIC_API_KEY no está configurada")
+        return PhotoValidation(
+            is_valid=False,
+            confidence=0.0,
+            product_detected=False,
+            drainage_area_visible=False,
+            appears_recent=False,
+            issues=["API key de Anthropic no configurada"],
+            summary="No se pudo validar: falta configuración de API"
+        ), 0
+
     # Convertir a base64 si es necesario
     if isinstance(image_data, bytes):
         image_base64 = base64.b64encode(image_data).decode('utf-8')
     else:
         image_base64 = image_data
 
-    client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    # Usar cliente async
+    client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
     # Construir prompt de validación
     keywords_text = ""
@@ -93,7 +107,9 @@ RESPONDE UNICAMENTE CON JSON (sin markdown):
 }}"""
 
     try:
-        message = client.messages.create(
+        logger.info(f"Enviando imagen a Claude Vision (modelo: {settings.CLAUDE_MODEL})")
+
+        message = await client.messages.create(
             model=settings.CLAUDE_MODEL,
             max_tokens=1024,
             messages=[
@@ -119,6 +135,7 @@ RESPONDE UNICAMENTE CON JSON (sin markdown):
 
         # Parsear respuesta JSON
         response_text = message.content[0].text
+        logger.info(f"Respuesta de Claude recibida: {response_text[:200]}...")
 
         # Limpiar si viene con markdown
         if "```json" in response_text:
@@ -131,15 +148,14 @@ RESPONDE UNICAMENTE CON JSON (sin markdown):
         result = json.loads(response_text)
         processing_time = int((time.time() - start_time) * 1000)
 
-        logger.info(f"Photo validation completed in {processing_time}ms: valid={result['is_valid']}")
+        logger.info(f"Validación completada en {processing_time}ms: valid={result['is_valid']}, confidence={result['confidence']}")
 
         return PhotoValidation(**result), processing_time
 
     except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Claude response: {e}")
-        logger.error(f"Response text: {response_text[:500]}")
+        logger.error(f"Error parseando respuesta de Claude: {e}")
+        logger.error(f"Texto de respuesta: {response_text[:500] if 'response_text' in dir() else 'N/A'}")
 
-        # Retornar validación fallida
         return PhotoValidation(
             is_valid=False,
             confidence=0.0,
@@ -150,9 +166,53 @@ RESPONDE UNICAMENTE CON JSON (sin markdown):
             summary="No se pudo validar la foto debido a un error técnico"
         ), int((time.time() - start_time) * 1000)
 
-    except anthropic.APIError as e:
-        logger.error(f"Anthropic API error: {e}")
-        raise
+    except anthropic.APIConnectionError as e:
+        logger.error(f"Error de conexión con Anthropic API: {e}")
+        return PhotoValidation(
+            is_valid=False,
+            confidence=0.0,
+            product_detected=False,
+            drainage_area_visible=False,
+            appears_recent=False,
+            issues=["Error de conexión con el servicio de IA"],
+            summary="No se pudo conectar al servicio de validación"
+        ), int((time.time() - start_time) * 1000)
+
+    except anthropic.RateLimitError as e:
+        logger.error(f"Rate limit excedido en Anthropic API: {e}")
+        return PhotoValidation(
+            is_valid=False,
+            confidence=0.0,
+            product_detected=False,
+            drainage_area_visible=False,
+            appears_recent=False,
+            issues=["Límite de solicitudes excedido, intenta más tarde"],
+            summary="Servicio temporalmente no disponible"
+        ), int((time.time() - start_time) * 1000)
+
+    except anthropic.APIStatusError as e:
+        logger.error(f"Error de API de Anthropic: {e.status_code} - {e.message}")
+        return PhotoValidation(
+            is_valid=False,
+            confidence=0.0,
+            product_detected=False,
+            drainage_area_visible=False,
+            appears_recent=False,
+            issues=[f"Error del servicio de IA: {e.status_code}"],
+            summary=f"Error al validar: {e.message[:100]}"
+        ), int((time.time() - start_time) * 1000)
+
+    except Exception as e:
+        logger.error(f"Error inesperado en validación: {type(e).__name__}: {e}")
+        return PhotoValidation(
+            is_valid=False,
+            confidence=0.0,
+            product_detected=False,
+            drainage_area_visible=False,
+            appears_recent=False,
+            issues=[f"Error inesperado: {type(e).__name__}"],
+            summary="Error técnico durante la validación"
+        ), int((time.time() - start_time) * 1000)
 
 
 async def analyze_photo_metadata(

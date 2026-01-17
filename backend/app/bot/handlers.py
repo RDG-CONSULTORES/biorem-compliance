@@ -296,11 +296,17 @@ async def validate_photo_async(compliance_id: int, file_id: str, context: Contex
     """Valida una foto de forma asíncrona con Claude Vision."""
     import base64
 
+    logger.info(f"Iniciando validación async para compliance_id={compliance_id}")
+
+    contact_telegram_id = None
+
     try:
         # Descargar foto de Telegram
+        logger.info(f"Descargando foto de Telegram: {file_id}")
         file = await context.bot.get_file(file_id)
         photo_bytes = await file.download_as_bytearray()
         photo_base64 = base64.b64encode(bytes(photo_bytes)).decode('utf-8')
+        logger.info(f"Foto descargada: {len(photo_bytes)} bytes")
 
         async with await get_db_session() as db:
             # Obtener el registro de compliance
@@ -312,6 +318,14 @@ async def validate_photo_async(compliance_id: int, file_id: str, context: Contex
             if not compliance:
                 logger.error(f"Compliance record {compliance_id} not found")
                 return
+
+            # Guardar telegram_id del contacto para notificar errores
+            result = await db.execute(
+                select(Contact).where(Contact.id == compliance.contact_id)
+            )
+            contact = result.scalar_one_or_none()
+            if contact:
+                contact_telegram_id = contact.telegram_id
 
             # Obtener información de la ubicación y producto
             location_name = "Ubicación"
@@ -331,15 +345,16 @@ async def validate_photo_async(compliance_id: int, file_id: str, context: Contex
 
             # Validar con Claude Vision
             from app.services.claude_vision import validate_compliance_photo
-            import time
 
-            start_time = time.time()
+            logger.info(f"Enviando a Claude Vision: location={location_name}, product={product_name}")
             validation_result, processing_time = await validate_compliance_photo(
                 image_data=photo_base64,
                 expected_product=product_name,
                 location_name=location_name,
                 product_keywords=product_keywords
             )
+
+            logger.info(f"Resultado de validación: is_valid={validation_result.is_valid}, confidence={validation_result.confidence}")
 
             # Guardar resultado
             compliance.set_ai_validation(
@@ -348,10 +363,10 @@ async def validate_photo_async(compliance_id: int, file_id: str, context: Contex
             )
 
             await db.commit()
+            logger.info(f"Resultado guardado en DB para compliance_id={compliance_id}")
 
             # Notificar al usuario
-            contact = compliance.contact
-            if contact and contact.telegram_id:
+            if contact_telegram_id:
                 if validation_result.is_valid:
                     message = (
                         "Validación exitosa!\n\n"
@@ -359,7 +374,7 @@ async def validate_photo_async(compliance_id: int, file_id: str, context: Contex
                         f"{validation_result.summary}"
                     )
                 else:
-                    issues = "\n".join(f"- {i}" for i in validation_result.issues)
+                    issues = "\n".join(f"- {i}" for i in validation_result.issues) if validation_result.issues else "Sin observaciones específicas"
                     message = (
                         "Validación con observaciones\n\n"
                         f"Confianza: {validation_result.confidence * 100:.0f}%\n"
@@ -369,12 +384,27 @@ async def validate_photo_async(compliance_id: int, file_id: str, context: Contex
                     )
 
                 await context.bot.send_message(
-                    chat_id=contact.telegram_id,
+                    chat_id=contact_telegram_id,
                     text=message
                 )
+                logger.info(f"Notificación enviada a {contact_telegram_id}")
 
     except Exception as e:
-        logger.error(f"Error validating photo {compliance_id}: {e}")
+        logger.error(f"Error validating photo {compliance_id}: {type(e).__name__}: {e}", exc_info=True)
+
+        # Intentar notificar al usuario del error
+        if contact_telegram_id:
+            try:
+                await context.bot.send_message(
+                    chat_id=contact_telegram_id,
+                    text=(
+                        "Hubo un problema al validar tu foto.\n\n"
+                        "Tu evidencia fue recibida pero la validación automática falló. "
+                        "Un supervisor la revisará manualmente."
+                    )
+                )
+            except Exception as notify_error:
+                logger.error(f"Error notifying user of validation failure: {notify_error}")
 
 
 # ==================== CONFIGURACIÓN DEL BOT ====================

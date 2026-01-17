@@ -17,7 +17,7 @@ pydantic-settings==2.1.0
 python-telegram-bot==21.0.1
 
 # Anthropic (Claude Vision)
-anthropic==0.18.1
+anthropic>=0.40.0
 
 # Scheduler para recordatorios
 apscheduler==3.10.4

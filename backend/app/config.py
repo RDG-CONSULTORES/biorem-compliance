@@ -42,7 +42,7 @@ class Settings(BaseSettings):
         default="",
         description="API Key de Anthropic para Claude Vision"
     )
-    CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
+    CLAUDE_MODEL: str = "claude-sonnet-4-5-20250514"
 
     # Storage (para fotos de evidencia)
     STORAGE_TYPE: str = "local"  # "local", "s3", "r2"
