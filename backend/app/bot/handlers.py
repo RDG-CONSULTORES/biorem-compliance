@@ -16,6 +16,7 @@ from telegram.ext import (
     filters
 )
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -380,19 +381,53 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para botones de texto del teclado."""
     text = update.message.text
+    user_id = update.effective_user.id
 
-    if text in ["📸 Enviar Foto", "📸 Enviar Foto 🔴"]:
-        await request_location_for_photo(update, context)
-    elif text == "📊 Mi Estado":
-        await status_command(update, context)
-    elif text == "❓ Ayuda":
-        await help_command(update, context)
-    elif text == "❌ Cancelar":
-        context.user_data['awaiting_location_for_photo'] = False
+    logger.info(f"Botón presionado: '{text}' por user_id={user_id}")
+
+    try:
+        if text in ["📸 Enviar Foto", "📸 Enviar Foto 🔴"]:
+            logger.info(f"Procesando: Enviar Foto para user_id={user_id}")
+            await request_location_for_photo(update, context)
+        elif text == "📊 Mi Estado":
+            logger.info(f"Procesando: Mi Estado para user_id={user_id}")
+            await status_command(update, context)
+        elif text == "❓ Ayuda":
+            logger.info(f"Procesando: Ayuda para user_id={user_id}")
+            await help_command(update, context)
+        elif text == "❌ Cancelar":
+            logger.info(f"Procesando: Cancelar para user_id={user_id}")
+            context.user_data['awaiting_location_for_photo'] = False
+            await update.message.reply_text(
+                "Operación cancelada.",
+                reply_markup=get_main_keyboard()
+            )
+        else:
+            logger.warning(f"Botón no reconocido: '{text}' de user_id={user_id}")
+    except Exception as e:
+        logger.error(f"Error en handle_text_buttons: {type(e).__name__}: {e}", exc_info=True)
         await update.message.reply_text(
-            "Operación cancelada.",
+            "Hubo un error. Por favor intenta de nuevo.",
             reply_markup=get_main_keyboard()
         )
+
+
+async def cancel_conversation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Cancela la conversación actual."""
+    await update.message.reply_text(
+        "Operación cancelada.",
+        reply_markup=get_main_keyboard()
+    )
+    return ConversationHandler.END
+
+
+async def handle_unknown_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler catch-all para mensajes de texto no reconocidos."""
+    text = update.message.text
+    logger.info(f"Mensaje no manejado recibido: '{text}' de user_id={update.effective_user.id}")
+
+    # No responder a mensajes aleatorios para evitar spam
+    # Solo loggear para debugging
 
 
 async def request_location_for_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -752,9 +787,40 @@ async def validate_photo_async(compliance_id: int, file_id: str, context: Contex
 # ==================== CONFIGURACIÓN DEL BOT ====================
 
 def setup_handlers(application: Application):
-    """Configura los handlers del bot."""
+    """
+    Configura los handlers del bot.
 
-    # Conversation handler para vinculación
+    IMPORTANTE: El orden de los handlers importa!
+    - group=-1: Handlers prioritarios (botones, ubicación, fotos)
+    - group=0: ConversationHandler para vinculación
+    - group=1: Catch-all para debugging
+    """
+
+    # ============ GRUPO -1: Handlers prioritarios ============
+    # Estos se ejecutan ANTES del ConversationHandler
+
+    # Handler de ubicación (Photo Guard) - PRIORIDAD ALTA
+    application.add_handler(
+        MessageHandler(filters.LOCATION, handle_location),
+        group=-1
+    )
+
+    # Handler de fotos - PRIORIDAD ALTA
+    application.add_handler(
+        MessageHandler(filters.PHOTO, handle_photo),
+        group=-1
+    )
+
+    # Handler de botones de texto del teclado - PRIORIDAD ALTA
+    button_filter = filters.Regex(r'^(📸 Enviar Foto|📸 Enviar Foto 🔴|📊 Mi Estado|❓ Ayuda|❌ Cancelar)$')
+    application.add_handler(
+        MessageHandler(button_filter, handle_text_buttons),
+        group=-1
+    )
+
+    # ============ GRUPO 0: ConversationHandler ============
+
+    # Conversation handler para vinculación de nuevos usuarios
     link_conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start_command)],
         states={
@@ -762,27 +828,28 @@ def setup_handlers(application: Application):
                 MessageHandler(filters.TEXT & ~filters.COMMAND, handle_invite_code)
             ],
         },
-        fallbacks=[CommandHandler("start", start_command)],
+        fallbacks=[
+            CommandHandler("start", start_command),
+            CommandHandler("cancelar", cancel_conversation),
+        ],
+        per_user=True,
+        per_chat=True,
+        name="link_conversation",
+    )
+    application.add_handler(link_conv_handler, group=0)
+
+    # Comandos simples (fuera de conversación)
+    application.add_handler(CommandHandler("estado", status_command), group=0)
+    application.add_handler(CommandHandler("ayuda", help_command), group=0)
+    application.add_handler(CommandHandler("help", help_command), group=0)
+
+    # ============ GRUPO 1: Catch-all para debugging ============
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_text),
+        group=1
     )
 
-    application.add_handler(link_conv_handler)
-
-    # Comandos simples
-    application.add_handler(CommandHandler("estado", status_command))
-    application.add_handler(CommandHandler("ayuda", help_command))
-    application.add_handler(CommandHandler("help", help_command))
-
-    # Handler de ubicación (Photo Guard)
-    application.add_handler(MessageHandler(filters.LOCATION, handle_location))
-
-    # Handler de fotos
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-
-    # Handler de botones de texto del teclado
-    button_filter = filters.Regex(r'^(📸 Enviar Foto|📸 Enviar Foto 🔴|📊 Mi Estado|❓ Ayuda|❌ Cancelar)$')
-    application.add_handler(MessageHandler(button_filter, handle_text_buttons))
-
-    logger.info("Bot handlers configured with Photo Guard")
+    logger.info("Bot handlers configured with Photo Guard (priority groups enabled)")
 
 
 async def start_bot():
