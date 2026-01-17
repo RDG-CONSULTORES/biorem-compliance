@@ -80,8 +80,8 @@ app = FastAPI(
     title=settings.APP_NAME,
     description="Sistema de recordatorios y compliance para Biorem",
     version=settings.APP_VERSION,
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
+    docs_url="/docs",  # Swagger UI habilitado
+    redoc_url="/redoc",  # ReDoc habilitado
     lifespan=lifespan
 )
 
