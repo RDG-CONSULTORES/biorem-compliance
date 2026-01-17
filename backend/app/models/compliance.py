@@ -92,8 +92,12 @@ class ComplianceRecord(Base):
         if processing_time_ms:
             self.ai_processing_time_ms = processing_time_ms
 
-        # Si la IA valida con alta confianza, marcar como válido automáticamente
-        if self.ai_validated and self.ai_confidence >= 0.85:
+        # Si la IA valida con alta confianza Y detectó ambos criterios, marcar como válido
+        # Requiere: confianza >= 90%, producto detectado Y área de drenaje visible
+        if (self.ai_validated and
+            self.ai_confidence >= 0.90 and
+            self.ai_product_detected and
+            self.ai_drainage_visible):
             self.is_valid = True
 
     def set_manual_validation(self, is_valid: bool, validated_by_id: int, notes: str = None):

@@ -75,35 +75,51 @@ async def validate_compliance_photo(
     if product_keywords:
         keywords_text = f"\n- Características del producto: {product_keywords}"
 
-    prompt = f"""Analiza esta foto de evidencia de aplicación de producto para drenajes.
+    prompt = f"""Eres un validador ESTRICTO de fotos de evidencia para una empresa de productos de drenaje.
 
 CONTEXTO:
 - Producto esperado: {expected_product}
 - Ubicación: {location_name}{keywords_text}
-- Esta foto debe mostrar la aplicación del producto en un drenaje/trampa de grasa
+- El usuario DEBE enviar una foto mostrando la aplicación REAL del producto en un drenaje
 
-EVALUA CON CUIDADO:
-1. ¿Se ve el producto o su envase en la foto? (botella, etiqueta, líquido siendo aplicado)
-2. ¿Se ve un área de drenaje, trampa de grasa, coladera, o zona de aplicación?
-3. ¿La foto parece tomada recientemente y en el momento? (no es una foto vieja/reciclada)
-4. ¿La calidad de la imagen es suficiente para verificar la aplicación?
-5. ¿Hay algo sospechoso que indique que no es una foto genuina de aplicación?
+CRITERIOS DE VALIDACIÓN ESTRICTOS:
 
-IMPORTANTE:
-- Sé razonablemente estricto pero no excesivo
-- Una foto válida debe mostrar evidencia clara de aplicación
-- Si solo se ve el producto sin el área de aplicación, es parcialmente válido
-- Si solo se ve el área sin producto, no es válido
+1. PRODUCTO VISIBLE (OBLIGATORIO):
+   - Debe verse claramente una botella, envase, o producto siendo aplicado
+   - El producto debe ser identificable como producto de limpieza/tratamiento de drenajes
+   - NO es válido: fotos sin ningún producto visible
 
-RESPONDE UNICAMENTE CON JSON (sin markdown):
+2. ÁREA DE DRENAJE/APLICACIÓN (OBLIGATORIO):
+   - Debe verse un drenaje, coladera, trampa de grasa, tubería, o zona de aplicación
+   - Debe ser claramente un área relacionada con drenajes/plomería
+   - NO es válido: fotos de escritorios, teclados, pantallas, exteriores sin drenajes
+
+3. CONTEXTO DE APLICACIÓN:
+   - La foto debe mostrar el acto de aplicación o evidencia clara de que se aplicó
+   - Debe parecer un ambiente de trabajo real (cocina industrial, baño, área de servicio)
+
+RECHAZAR INMEDIATAMENTE si:
+- La foto muestra objetos no relacionados (computadoras, teclados, celulares, personas sin contexto)
+- No hay ningún producto de limpieza/tratamiento visible
+- No hay ningún drenaje, coladera o área de aplicación visible
+- La foto es claramente de prueba o irrelevante
+- Es una captura de pantalla o foto de otra foto
+
+ESCALA DE CONFIANZA:
+- 0.9-1.0: Producto Y drenaje claramente visibles, aplicación evidente
+- 0.7-0.9: Producto visible con área de drenaje, pero no perfectamente claro
+- 0.5-0.7: Solo producto O solo drenaje visible (parcialmente válido)
+- 0.0-0.5: Foto irrelevante, de prueba, o sin elementos requeridos
+
+RESPONDE UNICAMENTE CON JSON (sin markdown, sin explicaciones adicionales):
 {{
     "is_valid": true/false,
     "confidence": 0.0-1.0,
     "product_detected": true/false,
     "drainage_area_visible": true/false,
     "appears_recent": true/false,
-    "issues": ["lista de problemas si los hay"],
-    "summary": "Resumen breve de la evaluación en español"
+    "issues": ["lista de problemas específicos"],
+    "summary": "Resumen breve en español de lo que se ve en la foto"
 }}"""
 
     try:
