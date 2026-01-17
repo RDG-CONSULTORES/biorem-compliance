@@ -132,6 +132,7 @@ async def send_pending_reminders():
         return
 
     now = datetime.utcnow()
+    logger.debug(f"Checking pending reminders at {now}")
 
     async with await get_db_session() as db:
         # Obtener recordatorios pendientes que ya pasaron su hora
@@ -145,7 +146,10 @@ async def send_pending_reminders():
         )
         reminders = result.scalars().all()
 
+        logger.info(f"Found {len(reminders)} pending reminders to send")
+
         for reminder in reminders:
+            logger.info(f"Sending reminder {reminder.id} scheduled for {reminder.scheduled_for}")
             await send_reminder(reminder, db)
 
         await db.commit()
