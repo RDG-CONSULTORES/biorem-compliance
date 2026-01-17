@@ -888,6 +888,23 @@ def setup_handlers(application: Application):
     logger.info("Bot handlers configured with Photo Guard (priority groups enabled)")
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejador global de errores del bot."""
+    logger.error(f"!!! ERROR GLOBAL DEL BOT !!!")
+    logger.error(f"Update: {update}")
+    logger.error(f"Error: {context.error}", exc_info=context.error)
+
+    # Intentar notificar al usuario
+    if update and hasattr(update, 'effective_message') and update.effective_message:
+        try:
+            await update.effective_message.reply_text(
+                "Ocurrió un error inesperado. Por favor intenta de nuevo.\n"
+                "Si el problema persiste, contacta al administrador."
+            )
+        except Exception as e:
+            logger.error(f"No se pudo enviar mensaje de error al usuario: {e}")
+
+
 async def start_bot():
     """Inicia el bot de Telegram."""
     if not settings.TELEGRAM_BOT_TOKEN:
@@ -897,12 +914,16 @@ async def start_bot():
     application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
     setup_handlers(application)
 
+    # Agregar manejador global de errores
+    application.add_error_handler(error_handler)
+
     # Iniciar polling
     logger.info("Starting Telegram bot in polling mode...")
     await application.initialize()
     await application.start()
     await application.updater.start_polling(drop_pending_updates=True)
 
+    logger.info("Telegram bot started successfully!")
     return application
 
 
