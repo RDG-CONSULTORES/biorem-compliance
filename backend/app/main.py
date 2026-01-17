@@ -86,9 +86,18 @@ app = FastAPI(
 )
 
 # Configurar CORS
+# Orígenes permitidos (hardcoded para evitar problemas con variables de entorno)
+cors_origins = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://biorem-compliance-front-end-production.up.railway.app",
+]
+# También agregar orígenes de la variable de entorno si existen
+cors_origins.extend([o for o in settings.cors_origins_list if o not in cors_origins])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
