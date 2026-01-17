@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+import os
 
 from app.config import settings
 from app.database import async_engine, Base
@@ -14,6 +15,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def run_migrations():
+    """Ejecuta migraciones de Alembic al iniciar la aplicación."""
+    try:
+        from alembic.config import Config
+        from alembic import command
+
+        # Obtener la ruta del directorio backend
+        backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        alembic_cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+        alembic_cfg.set_main_option("script_location", os.path.join(backend_dir, "alembic"))
+
+        logger.info("Running database migrations...")
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Database migrations completed successfully")
+        return True
+    except Exception as e:
+        logger.error(f"Migration error: {e}")
+        # No fallar si hay error - podría ser que las columnas ya existen
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Maneja el ciclo de vida de la aplicación."""
@@ -24,19 +46,24 @@ async def lifespan(app: FastAPI):
         logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
         logger.info(f"Environment: {settings.ENVIRONMENT}")
 
-        # Crear tablas si no existen
+        # Ejecutar migraciones de base de datos
+        # Esto crea tablas nuevas Y agrega columnas a tablas existentes
         try:
-            async with async_engine.begin() as conn:
-                # Importar todos los modelos para que SQLAlchemy los conozca
-                from app.models import (
-                    Client, Location, Contact, Product,
-                    ScheduledReminder, ComplianceRecord, NotificationLog
-                )
-                await conn.run_sync(Base.metadata.create_all)
-                logger.info("Database tables created/verified")
+            # Importar modelos para que Alembic los conozca
+            from app.models import (
+                Client, Location, Contact, Product,
+                ScheduledReminder, ComplianceRecord, NotificationLog
+            )
+            run_migrations()
         except Exception as e:
-            logger.error(f"Database initialization error: {e}")
-            # Continue anyway - tables might already exist
+            logger.error(f"Database migration error: {e}")
+            # Fallback: intentar create_all básico
+            try:
+                async with async_engine.begin() as conn:
+                    await conn.run_sync(Base.metadata.create_all)
+                    logger.info("Fallback: Database tables created with create_all")
+            except Exception as e2:
+                logger.error(f"Fallback database initialization also failed: {e2}")
 
         # Iniciar bot de Telegram
         if settings.TELEGRAM_BOT_TOKEN:
