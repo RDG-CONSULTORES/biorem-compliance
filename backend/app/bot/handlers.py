@@ -16,7 +16,6 @@ from telegram.ext import (
     filters
 )
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import AsyncSessionLocal
@@ -101,7 +100,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     telegram_id = str(user.id)
 
-    async with await get_db_session() as db:
+    async with AsyncSessionLocal() as db:
         contact = await get_contact_by_telegram_id(telegram_id, db)
 
         if contact:
@@ -154,7 +153,7 @@ async def handle_invite_code(update: Update, context: ContextTypes.DEFAULT_TYPE)
     code = update.message.text.strip().upper()
     user = update.effective_user
 
-    async with await get_db_session() as db:
+    async with AsyncSessionLocal() as db:
         contact = await get_contact_by_invite_code(code, db)
 
         if not contact:
@@ -200,7 +199,7 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     telegram_id = str(user.id)
 
-    async with await get_db_session() as db:
+    async with AsyncSessionLocal() as db:
         contact = await get_contact_by_telegram_id(telegram_id, db)
 
         if not contact:
@@ -326,47 +325,56 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(user.id)
     location = update.message.location
 
-    async with await get_db_session() as db:
-        contact = await get_contact_by_telegram_id(telegram_id, db)
+    try:
+        async with AsyncSessionLocal() as db:
+            contact = await get_contact_by_telegram_id(telegram_id, db)
 
-        if not contact:
-            await update.message.reply_text(
-                "No tienes una cuenta vinculada.\n"
-                "Usa /start para vincular tu cuenta."
-            )
-            return
+            if not contact:
+                await update.message.reply_text(
+                    "No tienes una cuenta vinculada.\n"
+                    "Usa /start para vincular tu cuenta."
+                )
+                return
 
-        # Guardar ubicación del contacto
-        contact.update_location(
-            latitude=location.latitude,
-            longitude=location.longitude,
-            accuracy=location.horizontal_accuracy if hasattr(location, 'horizontal_accuracy') else None
+            # Guardar ubicación del contacto
+            contact.last_known_latitude = location.latitude
+            contact.last_known_longitude = location.longitude
+            contact.last_location_at = datetime.utcnow()
+            if hasattr(location, 'horizontal_accuracy') and location.horizontal_accuracy:
+                contact.last_location_accuracy = location.horizontal_accuracy
+            contact.last_interaction_at = datetime.utcnow()
+
+            await db.commit()
+
+            # Verificar si estaba esperando ubicación para foto
+            if context.user_data.get('awaiting_location_for_photo'):
+                context.user_data['awaiting_location_for_photo'] = False
+                context.user_data['photo_location'] = {
+                    'latitude': location.latitude,
+                    'longitude': location.longitude,
+                    'timestamp': datetime.utcnow()
+                }
+
+                await update.message.reply_text(
+                    "✅ Ubicación recibida.\n\n"
+                    "Ahora envía la foto de evidencia de la aplicación del producto.",
+                    reply_markup=get_main_keyboard()
+                )
+            else:
+                await update.message.reply_text(
+                    "📍 Ubicación registrada.\n\n"
+                    "Tu ubicación ha sido guardada. Cuando envíes una foto, "
+                    "se verificará que estés en la ubicación correcta.",
+                    reply_markup=get_main_keyboard()
+                )
+
+    except Exception as e:
+        logger.error(f"Error handling location: {type(e).__name__}: {e}", exc_info=True)
+        await update.message.reply_text(
+            "Hubo un error al procesar tu ubicación.\n"
+            "Por favor intenta de nuevo.",
+            reply_markup=get_main_keyboard()
         )
-        contact.last_interaction_at = datetime.utcnow()
-
-        await db.commit()
-
-        # Verificar si estaba esperando ubicación para foto
-        if context.user_data.get('awaiting_location_for_photo'):
-            context.user_data['awaiting_location_for_photo'] = False
-            context.user_data['photo_location'] = {
-                'latitude': location.latitude,
-                'longitude': location.longitude,
-                'timestamp': datetime.utcnow()
-            }
-
-            await update.message.reply_text(
-                "✅ Ubicación recibida.\n\n"
-                "Ahora envía la foto de evidencia de la aplicación del producto.",
-                reply_markup=get_main_keyboard()
-            )
-        else:
-            await update.message.reply_text(
-                "📍 Ubicación registrada.\n\n"
-                "Tu ubicación ha sido guardada. Cuando envíes una foto, "
-                "se verificará que estés en la ubicación correcta.",
-                reply_markup=get_main_keyboard()
-            )
 
 
 async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -392,7 +400,7 @@ async def request_location_for_photo(update: Update, context: ContextTypes.DEFAU
     user = update.effective_user
     telegram_id = str(user.id)
 
-    async with await get_db_session() as db:
+    async with AsyncSessionLocal() as db:
         contact = await get_contact_by_telegram_id(telegram_id, db)
 
         if not contact:
@@ -440,7 +448,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     telegram_id = str(user.id)
 
-    async with await get_db_session() as db:
+    async with AsyncSessionLocal() as db:
         contact = await get_contact_by_telegram_id(telegram_id, db)
 
         if not contact:
@@ -595,7 +603,7 @@ async def validate_photo_async(compliance_id: int, file_id: str, context: Contex
         photo_base64 = base64.b64encode(bytes(photo_bytes)).decode('utf-8')
         logger.info(f"Foto descargada: {len(photo_bytes)} bytes")
 
-        async with await get_db_session() as db:
+        async with AsyncSessionLocal() as db:
             # Obtener el registro de compliance
             result = await db.execute(
                 select(ComplianceRecord).where(ComplianceRecord.id == compliance_id)
