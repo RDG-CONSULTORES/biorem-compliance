@@ -66,7 +66,7 @@ class ScheduledReminder(Base):
     # Relaciones
     location = relationship("Location", back_populates="reminders")
     contact = relationship("Contact", back_populates="reminders", foreign_keys=[contact_id])
-    compliance_record = relationship("ComplianceRecord", back_populates="reminder", foreign_keys=[compliance_record_id])
+    compliance_record = relationship("ComplianceRecord", foreign_keys=[compliance_record_id])
 
     def __repr__(self):
         return f"<ScheduledReminder(id={self.id}, location_id={self.location_id}, status={self.status})>"

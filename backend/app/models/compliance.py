@@ -73,11 +73,7 @@ class ComplianceRecord(Base):
     # Relaciones
     location = relationship("Location", back_populates="compliance_records")
     contact = relationship("Contact", back_populates="compliance_records", foreign_keys=[contact_id])
-    reminder = relationship(
-        "ScheduledReminder",
-        back_populates="compliance_record",
-        foreign_keys=[reminder_id]
-    )
+    reminder = relationship("ScheduledReminder", foreign_keys=[reminder_id])
 
     def __repr__(self):
         return f"<ComplianceRecord(id={self.id}, location_id={self.location_id}, is_valid={self.is_valid})>"
