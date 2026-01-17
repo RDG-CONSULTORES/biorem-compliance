@@ -326,11 +326,18 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     telegram_id = str(user.id)
     location = update.message.location
 
+    logger.info(f"=== UBICACIÓN RECIBIDA de user_id={user.id} ===")
+    logger.info(f"Lat: {location.latitude}, Lon: {location.longitude}")
+
     try:
         async with AsyncSessionLocal() as db:
+            logger.info("Conexión a DB establecida")
+
             contact = await get_contact_by_telegram_id(telegram_id, db)
+            logger.info(f"Contact encontrado: {contact is not None}, id={contact.id if contact else None}")
 
             if not contact:
+                logger.warning(f"Usuario {telegram_id} no vinculado")
                 await update.message.reply_text(
                     "No tienes una cuenta vinculada.\n"
                     "Usa /start para vincular tu cuenta."
@@ -338,6 +345,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             # Guardar ubicación del contacto
+            logger.info("Guardando ubicación en contacto...")
             contact.last_known_latitude = location.latitude
             contact.last_known_longitude = location.longitude
             contact.last_location_at = datetime.utcnow()
@@ -345,10 +353,15 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 contact.last_location_accuracy = location.horizontal_accuracy
             contact.last_interaction_at = datetime.utcnow()
 
+            logger.info("Haciendo commit a DB...")
             await db.commit()
+            logger.info("Commit exitoso")
 
             # Verificar si estaba esperando ubicación para foto
-            if context.user_data.get('awaiting_location_for_photo'):
+            awaiting = context.user_data.get('awaiting_location_for_photo', False)
+            logger.info(f"awaiting_location_for_photo: {awaiting}")
+
+            if awaiting:
                 context.user_data['awaiting_location_for_photo'] = False
                 context.user_data['photo_location'] = {
                     'latitude': location.latitude,
@@ -356,12 +369,14 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     'timestamp': datetime.utcnow()
                 }
 
+                logger.info("Enviando confirmación (esperaba ubicación para foto)")
                 await update.message.reply_text(
                     "✅ Ubicación recibida.\n\n"
                     "Ahora envía la foto de evidencia de la aplicación del producto.",
                     reply_markup=get_main_keyboard()
                 )
             else:
+                logger.info("Enviando confirmación (ubicación general)")
                 await update.message.reply_text(
                     "📍 Ubicación registrada.\n\n"
                     "Tu ubicación ha sido guardada. Cuando envíes una foto, "
@@ -369,13 +384,18 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     reply_markup=get_main_keyboard()
                 )
 
+            logger.info("=== UBICACIÓN PROCESADA EXITOSAMENTE ===")
+
     except Exception as e:
-        logger.error(f"Error handling location: {type(e).__name__}: {e}", exc_info=True)
-        await update.message.reply_text(
-            "Hubo un error al procesar tu ubicación.\n"
-            "Por favor intenta de nuevo.",
-            reply_markup=get_main_keyboard()
-        )
+        logger.error(f"!!! ERROR en handle_location: {type(e).__name__}: {e}", exc_info=True)
+        try:
+            await update.message.reply_text(
+                "Hubo un error al procesar tu ubicación.\n"
+                "Por favor intenta de nuevo.",
+                reply_markup=get_main_keyboard()
+            )
+        except Exception as reply_error:
+            logger.error(f"Error enviando mensaje de error: {reply_error}")
 
 
 async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -435,38 +455,54 @@ async def request_location_for_photo(update: Update, context: ContextTypes.DEFAU
     user = update.effective_user
     telegram_id = str(user.id)
 
-    async with AsyncSessionLocal() as db:
-        contact = await get_contact_by_telegram_id(telegram_id, db)
+    logger.info(f"request_location_for_photo llamado para user_id={user.id}")
 
-        if not contact:
-            await update.message.reply_text(
-                "No tienes una cuenta vinculada.\n"
-                "Usa /start para vincular tu cuenta."
-            )
-            return
+    try:
+        async with AsyncSessionLocal() as db:
+            contact = await get_contact_by_telegram_id(telegram_id, db)
+            logger.info(f"Contact encontrado: {contact is not None}")
 
-        # Verificar si ya tiene ubicación reciente (últimos 5 minutos)
-        if contact.has_recent_location(minutes=5):
-            context.user_data['photo_location'] = {
-                'latitude': contact.last_known_latitude,
-                'longitude': contact.last_known_longitude,
-                'timestamp': contact.last_location_at
-            }
+            if not contact:
+                await update.message.reply_text(
+                    "No tienes una cuenta vinculada.\n"
+                    "Usa /start para vincular tu cuenta."
+                )
+                return
 
-            await update.message.reply_text(
-                f"✅ Ubicación reciente detectada.\n\n"
-                "Ahora envía la foto de evidencia.",
-                reply_markup=get_main_keyboard()
-            )
-        else:
-            # Pedir ubicación
-            context.user_data['awaiting_location_for_photo'] = True
+            # Verificar si ya tiene ubicación reciente (últimos 5 minutos)
+            has_recent = contact.has_recent_location(minutes=5)
+            logger.info(f"Tiene ubicación reciente: {has_recent}")
 
-            await update.message.reply_text(
-                "📍 Para verificar tu evidencia, primero comparte tu ubicación.\n\n"
-                "Esto nos ayuda a confirmar que estás en el lugar correcto.",
-                reply_markup=get_location_request_keyboard()
-            )
+            if has_recent:
+                context.user_data['photo_location'] = {
+                    'latitude': contact.last_known_latitude,
+                    'longitude': contact.last_known_longitude,
+                    'timestamp': contact.last_location_at
+                }
+
+                await update.message.reply_text(
+                    "✅ Ubicación reciente detectada.\n\n"
+                    "Ahora envía la foto de evidencia.",
+                    reply_markup=get_main_keyboard()
+                )
+            else:
+                # Pedir ubicación
+                context.user_data['awaiting_location_for_photo'] = True
+                logger.info("Solicitando ubicación al usuario")
+
+                await update.message.reply_text(
+                    "📍 Para verificar tu evidencia, primero comparte tu ubicación.\n\n"
+                    "Esto nos ayuda a confirmar que estás en el lugar correcto.",
+                    reply_markup=get_location_request_keyboard()
+                )
+                logger.info("Teclado de ubicación enviado")
+
+    except Exception as e:
+        logger.error(f"Error en request_location_for_photo: {type(e).__name__}: {e}", exc_info=True)
+        await update.message.reply_text(
+            "Hubo un error. Por favor intenta de nuevo.",
+            reply_markup=get_main_keyboard()
+        )
 
 
 # ==================== MANEJO DE FOTOS ====================
