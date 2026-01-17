@@ -212,11 +212,16 @@ async def create_reminder(
                 detail="El contacto no tiene Telegram vinculado"
             )
 
+        # Convertir datetime a naive (sin timezone) para la base de datos
+        scheduled_for = reminder_data.scheduled_for
+        if scheduled_for.tzinfo is not None:
+            scheduled_for = scheduled_for.replace(tzinfo=None)
+
         # Crear recordatorio
         reminder = ScheduledReminder(
             location_id=reminder_data.location_id,
             contact_id=reminder_data.contact_id,
-            scheduled_for=reminder_data.scheduled_for,
+            scheduled_for=scheduled_for,
             timezone=reminder_data.timezone
         )
         db.add(reminder)
