@@ -105,14 +105,36 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contact = await get_contact_by_telegram_id(telegram_id, db)
 
         if contact:
-            # Usuario ya vinculado
+            # Usuario ya vinculado - verificar si tiene pendientes
+            result = await db.execute(
+                select(ScheduledReminder)
+                .where(
+                    ScheduledReminder.contact_id == contact.id,
+                    ScheduledReminder.status == ReminderStatus.SENT
+                )
+            )
+            pending_count = len(result.scalars().all())
+            has_pending = pending_count > 0
+
+            # Mensaje de bienvenida con estado
+            welcome_msg = f"Hola {contact.name}! 👋\n\n"
+
+            if has_pending:
+                welcome_msg += f"🔴 Tienes {pending_count} recordatorio{'s' if pending_count > 1 else ''} pendiente{'s' if pending_count > 1 else ''}.\n\n"
+            else:
+                welcome_msg += "✅ No tienes recordatorios pendientes.\n\n"
+
+            welcome_msg += (
+                "Usa los botones para:\n"
+                "📸 Enviar foto de evidencia\n"
+                "📊 Ver tu estado\n"
+                "📍 Compartir ubicación\n"
+                "❓ Ver ayuda"
+            )
+
             await update.message.reply_text(
-                f"Hola {contact.name}! Ya estás vinculado a Biorem Compliance.\n\n"
-                "Comandos disponibles:\n"
-                "/estado - Ver tu estado de cumplimiento\n"
-                "/ayuda - Ver ayuda\n\n"
-                "Cuando recibas un recordatorio, simplemente envía una foto "
-                "de la aplicación del producto."
+                welcome_msg,
+                reply_markup=get_main_keyboard(has_pending)
             )
         else:
             # Usuario nuevo, pedir código
@@ -174,7 +196,7 @@ async def handle_invite_code(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler para /estado - Muestra el estado del usuario."""
+    """Handler para /estado - Muestra el estado detallado del usuario."""
     user = update.effective_user
     telegram_id = str(user.id)
 
@@ -188,42 +210,83 @@ async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Obtener recordatorios pendientes
+        # Obtener recordatorios pendientes con info de ubicación
         result = await db.execute(
-            select(ScheduledReminder)
+            select(ScheduledReminder, Location)
+            .join(Location, ScheduledReminder.location_id == Location.id)
             .where(
                 ScheduledReminder.contact_id == contact.id,
                 ScheduledReminder.status == ReminderStatus.SENT
             )
             .order_by(ScheduledReminder.scheduled_for)
         )
-        pending_reminders = result.scalars().all()
+        pending_data = result.all()
 
-        # Obtener últimos registros de compliance
+        # Obtener últimos registros de compliance con ubicación
         result = await db.execute(
-            select(ComplianceRecord)
+            select(ComplianceRecord, Location)
+            .outerjoin(Location, ComplianceRecord.location_id == Location.id)
             .where(ComplianceRecord.contact_id == contact.id)
             .order_by(ComplianceRecord.created_at.desc())
             .limit(5)
         )
-        recent_compliance = result.scalars().all()
+        recent_data = result.all()
 
         # Construir mensaje
-        message = f"Estado de {contact.name}\n\n"
+        message = f"📊 Estado de {contact.name}\n"
+        message += "━━━━━━━━━━━━━━━━━━━━\n\n"
 
-        if pending_reminders:
-            message += f"Recordatorios pendientes: {len(pending_reminders)}\n"
-            for r in pending_reminders[:3]:
-                message += f"  - Ubicación #{r.location_id}\n"
+        # Recordatorios pendientes
+        if pending_data:
+            message += f"🔴 Pendientes: {len(pending_data)}\n"
+            for reminder, location in pending_data[:3]:
+                time_ago = datetime.utcnow() - reminder.scheduled_for
+                hours_ago = int(time_ago.total_seconds() / 3600)
+                message += f"  • {location.name}\n"
+                message += f"    ⏱ Hace {hours_ago}h\n"
+            if len(pending_data) > 3:
+                message += f"  ... y {len(pending_data) - 3} más\n"
         else:
-            message += "Sin recordatorios pendientes\n"
+            message += "✅ Sin recordatorios pendientes\n"
 
-        message += f"\nÚltimos registros: {len(recent_compliance)}\n"
-        for c in recent_compliance:
-            status = "Validado" if c.is_valid else ("Pendiente" if c.is_valid is None else "Rechazado")
-            message += f"  - {c.created_at.strftime('%d/%m %H:%M')} - {status}\n"
+        message += "\n"
 
-        await update.message.reply_text(message)
+        # Últimos registros
+        message += "📋 Últimos registros:\n"
+        if recent_data:
+            for compliance, location in recent_data:
+                loc_name = location.name if location else "Sin ubicación"
+
+                # Estado con emoji
+                if compliance.is_valid:
+                    status = "✅"
+                elif compliance.is_valid is None:
+                    status = "⏳"
+                else:
+                    status = "❌"
+
+                # Score de autenticidad
+                score_text = ""
+                if compliance.authenticity_score is not None:
+                    score_text = f" ({compliance.authenticity_score}pts)"
+
+                date_str = compliance.created_at.strftime('%d/%m %H:%M')
+                message += f"  {status} {date_str} - {loc_name}{score_text}\n"
+        else:
+            message += "  Sin registros aún\n"
+
+        # Ubicación actual
+        message += "\n"
+        if contact.has_recent_location(minutes=30):
+            message += "📍 Ubicación: Reciente (últimos 30 min)\n"
+        elif contact.last_location_at:
+            last_loc = contact.last_location_at.strftime('%d/%m %H:%M')
+            message += f"📍 Última ubicación: {last_loc}\n"
+        else:
+            message += "📍 Sin ubicación registrada\n"
+
+        has_pending = len(pending_data) > 0
+        await update.message.reply_text(message, reply_markup=get_main_keyboard(has_pending))
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -468,21 +531,45 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Construir mensaje de confirmación con info de ubicación
         location_status = ""
+        location_points = 0
         if compliance.distance_from_expected is not None:
-            if compliance.distance_from_expected <= 500:
-                location_status = f"📍 Ubicación verificada ({compliance.distance_from_expected:.0f}m)\n"
+            if compliance.distance_from_expected <= 100:
+                location_status = f"📍 Ubicación perfecta ({compliance.distance_from_expected:.0f}m) +40pts"
+                location_points = 40
+            elif compliance.distance_from_expected <= 300:
+                location_status = f"📍 Ubicación cercana ({compliance.distance_from_expected:.0f}m) +30pts"
+                location_points = 30
+            elif compliance.distance_from_expected <= 500:
+                location_status = f"📍 Ubicación aceptable ({compliance.distance_from_expected:.0f}m) +20pts"
+                location_points = 20
             else:
-                location_status = f"⚠️ Ubicación distante ({compliance.distance_from_expected:.0f}m)\n"
+                location_status = f"⚠️ Ubicación distante ({compliance.distance_from_expected:.0f}m)"
         elif compliance.photo_latitude:
-            location_status = "📍 Ubicación registrada\n"
+            location_status = "📍 Ubicación registrada +15pts"
+            location_points = 15
         else:
-            location_status = "⚠️ Sin ubicación (menor certeza)\n"
+            location_status = "⚠️ Sin ubicación (compártela para mejor score)"
+
+        time_status = ""
+        if compliance.time_diff_minutes is not None:
+            abs_diff = abs(compliance.time_diff_minutes)
+            if abs_diff <= 30:
+                time_status = "⏱ Tiempo excelente +30pts"
+            elif abs_diff <= 120:
+                time_status = "⏱ Tiempo bueno +20pts"
+            elif abs_diff <= 240:
+                time_status = "⏱ Tiempo aceptable +10pts"
+            else:
+                time_status = f"⏱ Enviado tarde ({abs_diff}min)"
+        else:
+            time_status = "⏱ Sin recordatorio asociado +15pts"
 
         await update.message.reply_text(
-            f"Foto recibida!\n\n"
-            f"{location_status}"
-            "Estamos validando tu evidencia con IA...\n"
-            "Te notificaremos el resultado en breve.",
+            f"📸 Foto recibida!\n\n"
+            f"{location_status}\n"
+            f"{time_status}\n\n"
+            "🤖 Validando con IA...\n"
+            "Te notificaré el resultado en unos segundos.",
             reply_markup=get_main_keyboard()
         )
 
@@ -565,23 +652,70 @@ async def validate_photo_async(compliance_id: int, file_id: str, context: Contex
             await db.commit()
             logger.info(f"Resultado guardado en DB para compliance_id={compliance_id}")
 
-            # Notificar al usuario
+            # Notificar al usuario con score de autenticidad
             if contact_telegram_id:
+                # Obtener score de autenticidad
+                auth_score = compliance.authenticity_score or 0
+
+                # Emoji según el score
+                if auth_score >= 80:
+                    score_emoji = "🟢"
+                    score_label = "Excelente"
+                elif auth_score >= 60:
+                    score_emoji = "🟡"
+                    score_label = "Bueno"
+                elif auth_score >= 40:
+                    score_emoji = "🟠"
+                    score_label = "Regular"
+                else:
+                    score_emoji = "🔴"
+                    score_label = "Bajo"
+
+                # Detalles de verificación
+                verif_details = []
+                if compliance.location_verified:
+                    verif_details.append("📍 Ubicación ✓")
+                elif compliance.location_verified is False:
+                    verif_details.append("📍 Ubicación ✗")
+
+                if compliance.time_verified:
+                    verif_details.append("⏱ Tiempo ✓")
+                elif compliance.time_verified is False:
+                    verif_details.append("⏱ Tiempo ✗")
+
                 if validation_result.is_valid:
+                    verif_details.append("🤖 IA ✓")
+                else:
+                    verif_details.append("🤖 IA ✗")
+
+                verif_text = " | ".join(verif_details) if verif_details else ""
+
+                if validation_result.is_valid and auth_score >= 80:
                     message = (
-                        "Validación exitosa!\n\n"
-                        f"Confianza: {validation_result.confidence * 100:.0f}%\n"
+                        "✅ Validación exitosa!\n\n"
+                        f"{score_emoji} Score: {auth_score}/100 ({score_label})\n"
+                        f"{verif_text}\n\n"
                         f"{validation_result.summary}"
                     )
-                else:
-                    issues = "\n".join(f"- {i}" for i in validation_result.issues) if validation_result.issues else "Sin observaciones específicas"
+                elif validation_result.is_valid:
                     message = (
-                        "Validación con observaciones\n\n"
-                        f"Confianza: {validation_result.confidence * 100:.0f}%\n"
+                        "✅ Foto aceptada\n\n"
+                        f"{score_emoji} Score: {auth_score}/100 ({score_label})\n"
+                        f"{verif_text}\n\n"
                         f"{validation_result.summary}\n\n"
-                        f"Observaciones:\n{issues}\n\n"
-                        "Un supervisor revisará tu evidencia."
+                        "💡 Tip: Comparte tu ubicación para mejorar tu score."
                     )
+                else:
+                    issues = "\n".join(f"• {i}" for i in validation_result.issues[:3]) if validation_result.issues else ""
+                    message = (
+                        "⚠️ Validación con observaciones\n\n"
+                        f"{score_emoji} Score: {auth_score}/100 ({score_label})\n"
+                        f"{verif_text}\n\n"
+                        f"{validation_result.summary}\n\n"
+                    )
+                    if issues:
+                        message += f"Observaciones:\n{issues}\n\n"
+                    message += "Un supervisor revisará tu evidencia."
 
                 await context.bot.send_message(
                     chat_id=contact_telegram_id,
