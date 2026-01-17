@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -36,6 +37,7 @@ function getValidationStatus(record: ComplianceRecord): ValidationStatus {
 }
 
 export default function CompliancePage() {
+  const router = useRouter()
   const [records, setRecords] = useState<ComplianceRecord[]>([])
   const [locations, setLocations] = useState<Location[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
@@ -43,6 +45,10 @@ export default function CompliancePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+
+  const handleRowClick = (recordId: number) => {
+    router.push(`/compliance/${recordId}`)
+  }
 
   // Fetch data
   const fetchData = async () => {
@@ -204,7 +210,11 @@ export default function CompliancePage() {
             const StatusIcon = status.icon
 
             return (
-              <Card key={record.id}>
+              <Card
+                key={record.id}
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => handleRowClick(record.id)}
+              >
                 <CardContent className="pt-4">
                   <div className="flex items-start gap-3">
                     <div className="p-2 rounded-lg bg-muted">
@@ -269,7 +279,11 @@ export default function CompliancePage() {
                 const StatusIcon = status.icon
 
                 return (
-                  <TableRow key={record.id} className="cursor-pointer hover:bg-muted/50">
+                  <TableRow
+                    key={record.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleRowClick(record.id)}
+                  >
                     <TableCell className="font-medium">{getLocationName(record.location_id)}</TableCell>
                     <TableCell>{getContactName(record.contact_id)}</TableCell>
                     <TableCell>

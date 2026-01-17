@@ -1,17 +1,24 @@
 """API endpoints para Compliance y Recordatorios."""
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
 from typing import Optional
 from datetime import datetime, timedelta
+from functools import lru_cache
 import math
 import base64
+import httpx
+import logging
 
 from app.database import get_db
+from app.config import settings
 from app.models.compliance import ComplianceRecord
 from app.models.reminder import ScheduledReminder, ReminderStatus
 from app.models.location import Location
 from app.models.contact import Contact
+
+logger = logging.getLogger(__name__)
 from app.schemas.compliance import (
     ComplianceResponse, ComplianceWithDetails, ComplianceList,
     ReminderResponse, ReminderList, ReminderCreate,
@@ -88,6 +95,84 @@ async def get_compliance_record(
         raise HTTPException(status_code=404, detail="Registro no encontrado")
 
     return ComplianceWithDetails.model_validate(record)
+
+
+@router.get("/records/{record_id}/photo")
+async def get_compliance_photo(
+    record_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Proxy endpoint para obtener la foto de un registro de compliance.
+
+    Descarga la foto desde Telegram usando el file_id almacenado
+    y la retorna como streaming response.
+    """
+    # Obtener el registro
+    result = await db.execute(
+        select(ComplianceRecord).where(ComplianceRecord.id == record_id)
+    )
+    record = result.scalar_one_or_none()
+
+    if not record:
+        raise HTTPException(status_code=404, detail="Registro no encontrado")
+
+    if not record.photo_file_id:
+        raise HTTPException(status_code=404, detail="Este registro no tiene foto")
+
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise HTTPException(status_code=500, detail="Bot de Telegram no configurado")
+
+    try:
+        # Paso 1: Obtener el file_path desde Telegram API
+        async with httpx.AsyncClient() as client:
+            file_info_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getFile"
+            response = await client.get(file_info_url, params={"file_id": record.photo_file_id})
+
+            if response.status_code != 200:
+                logger.error(f"Error getting file info from Telegram: {response.text}")
+                raise HTTPException(status_code=502, detail="Error al obtener información del archivo de Telegram")
+
+            file_data = response.json()
+            if not file_data.get("ok"):
+                logger.error(f"Telegram API error: {file_data}")
+                raise HTTPException(status_code=502, detail="Error en respuesta de Telegram")
+
+            file_path = file_data["result"]["file_path"]
+
+            # Paso 2: Descargar el archivo desde Telegram
+            download_url = f"https://api.telegram.org/file/bot{settings.TELEGRAM_BOT_TOKEN}/{file_path}"
+            photo_response = await client.get(download_url)
+
+            if photo_response.status_code != 200:
+                logger.error(f"Error downloading photo from Telegram: {photo_response.status_code}")
+                raise HTTPException(status_code=502, detail="Error al descargar foto de Telegram")
+
+            # Determinar content type basado en la extensión
+            content_type = "image/jpeg"
+            if file_path.endswith(".png"):
+                content_type = "image/png"
+            elif file_path.endswith(".gif"):
+                content_type = "image/gif"
+            elif file_path.endswith(".webp"):
+                content_type = "image/webp"
+
+            # Retornar la imagen como streaming response
+            return StreamingResponse(
+                iter([photo_response.content]),
+                media_type=content_type,
+                headers={
+                    "Cache-Control": "public, max-age=3600",  # Cache por 1 hora
+                    "Content-Disposition": f"inline; filename=compliance-{record_id}.jpg"
+                }
+            )
+
+    except httpx.RequestError as e:
+        logger.error(f"Network error fetching photo: {e}")
+        raise HTTPException(status_code=502, detail="Error de red al obtener foto")
+    except Exception as e:
+        logger.error(f"Unexpected error fetching photo: {e}")
+        raise HTTPException(status_code=500, detail="Error interno al obtener foto")
 
 
 @router.post("/records/{record_id}/validate", response_model=ComplianceResponse)

@@ -1,6 +1,7 @@
-import { api } from "@/lib/api"
+import { api, API_URL } from "@/lib/api"
 import type {
   ComplianceRecord,
+  ComplianceRecordWithDetails,
   PaginatedResponse,
   PaginationParams,
 } from "@/types"
@@ -29,10 +30,17 @@ export const complianceService = {
   },
 
   /**
-   * Obtiene un registro de compliance por ID
+   * Obtiene un registro de compliance por ID con detalles completos
    */
-  async get(id: number): Promise<ComplianceRecord> {
-    return api.get<ComplianceRecord>(`/api/compliance/records/${id}`)
+  async get(id: number): Promise<ComplianceRecordWithDetails> {
+    return api.get<ComplianceRecordWithDetails>(`/api/compliance/records/${id}`)
+  },
+
+  /**
+   * Obtiene la URL de la foto de un registro de compliance
+   */
+  getPhotoUrl(id: number): string {
+    return `${API_URL}/api/compliance/records/${id}/photo`
   },
 
   /**
@@ -50,11 +58,12 @@ export const complianceService = {
   /**
    * Valida manualmente un registro de compliance
    */
-  async validate(id: number, isValid: boolean, notes?: string): Promise<ComplianceRecord> {
-    return api.patch<ComplianceRecord>(`/api/compliance/records/${id}/validate`, {
-      is_valid: isValid,
-      validation_notes: notes,
-    })
+  async validate(id: number, validatedById: number, isValid: boolean, notes?: string): Promise<ComplianceRecord> {
+    return api.post<ComplianceRecord>(
+      `/api/compliance/records/${id}/validate`,
+      { is_valid: isValid, notes },
+      { params: { validated_by_id: validatedById } }
+    )
   },
 
   /**

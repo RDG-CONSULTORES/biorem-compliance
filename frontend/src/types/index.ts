@@ -203,6 +203,8 @@ export interface ComplianceRecord {
   photo_url: string | null
   photo_file_id: string | null
   photo_received_at: string
+  photo_latitude: number | null
+  photo_longitude: number | null
   ai_validated: boolean | null
   ai_confidence: number | null
   ai_validated_at: string | null
@@ -216,6 +218,14 @@ export interface ComplianceRecord {
   contact_notes: string | null
   created_at: string
   updated_at: string
+}
+
+export interface ComplianceRecordWithDetails extends ComplianceRecord {
+  ai_validation: Record<string, unknown> | null
+  ai_product_detected: boolean | null
+  ai_drainage_visible: boolean | null
+  ai_appears_recent: boolean | null
+  ai_processing_time_ms: number | null
 }
 
 // ==================== PAGINATION ====================
