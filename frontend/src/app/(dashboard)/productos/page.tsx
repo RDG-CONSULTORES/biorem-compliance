@@ -12,20 +12,51 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Label } from "@/components/ui/label"
-import { Plus, Search, Package, Loader2, Beaker } from "lucide-react"
+import {
+  Plus,
+  Search,
+  Package,
+  Loader2,
+  Beaker,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  Power,
+} from "lucide-react"
+import { toast } from "sonner"
 import { productsService } from "@/services"
-import type { Product, ProductCreate } from "@/types"
+import type { Product, ProductCreate, ProductUpdate } from "@/types"
 
 export default function ProductosPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Dialog states
   const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [deletingProduct, setDeletingProduct] = useState<Product | null>(null)
 
   // Form state
   const [formData, setFormData] = useState<ProductCreate>({
@@ -42,11 +73,10 @@ export default function ProductosPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
-      setError(null)
       const response = await productsService.list({ search: searchQuery || undefined, page_size: 100 })
       setProducts(response.items)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al cargar productos")
+      toast.error(err instanceof Error ? err.message : "Error al cargar productos")
     } finally {
       setLoading(false)
     }
@@ -61,28 +91,99 @@ export default function ProductosPage() {
     return () => clearTimeout(timer)
   }, [searchQuery])
 
+  // Open dialog for create
+  const handleCreate = () => {
+    setEditingProduct(null)
+    setFormData({
+      name: "",
+      sku: "",
+      description: "",
+      application_instructions: "",
+      dosage: "",
+      frequency_recommended: 7,
+      category: "",
+    })
+    setIsDialogOpen(true)
+  }
+
+  // Open dialog for edit
+  const handleEdit = (product: Product) => {
+    setEditingProduct(product)
+    setFormData({
+      name: product.name,
+      sku: product.sku || "",
+      description: product.description || "",
+      application_instructions: product.application_instructions || "",
+      dosage: product.dosage || "",
+      frequency_recommended: product.frequency_recommended,
+      category: product.category || "",
+    })
+    setIsDialogOpen(true)
+  }
+
   // Handle form submit
   const handleSubmit = async () => {
     if (!formData.name.trim()) return
 
     try {
       setSaving(true)
-      await productsService.create(formData)
+
+      if (editingProduct) {
+        const updateData: ProductUpdate = {
+          name: formData.name,
+          sku: formData.sku || undefined,
+          description: formData.description || undefined,
+          application_instructions: formData.application_instructions || undefined,
+          dosage: formData.dosage || undefined,
+          frequency_recommended: formData.frequency_recommended,
+          category: formData.category || undefined,
+        }
+        await productsService.update(editingProduct.id, updateData)
+        toast.success("Producto actualizado correctamente")
+      } else {
+        await productsService.create(formData)
+        toast.success("Producto creado correctamente")
+      }
+
       setIsDialogOpen(false)
-      setFormData({
-        name: "",
-        sku: "",
-        description: "",
-        application_instructions: "",
-        dosage: "",
-        frequency_recommended: 7,
-        category: "",
-      })
+      setEditingProduct(null)
       fetchData()
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al crear producto")
+      toast.error(err instanceof Error ? err.message : "Error al guardar producto")
     } finally {
       setSaving(false)
+    }
+  }
+
+  // Open delete confirmation
+  const handleDeleteClick = (product: Product) => {
+    setDeletingProduct(product)
+    setIsDeleteDialogOpen(true)
+  }
+
+  // Confirm delete
+  const handleDeleteConfirm = async () => {
+    if (!deletingProduct) return
+
+    try {
+      await productsService.delete(deletingProduct.id)
+      toast.success("Producto eliminado correctamente")
+      setIsDeleteDialogOpen(false)
+      setDeletingProduct(null)
+      fetchData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al eliminar producto")
+    }
+  }
+
+  // Toggle active status
+  const handleToggleActive = async (product: Product) => {
+    try {
+      await productsService.update(product.id, { active: !product.active })
+      toast.success(product.active ? "Producto desactivado" : "Producto activado")
+      fetchData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error al cambiar estado")
     }
   }
 
@@ -96,113 +197,11 @@ export default function ProductosPage() {
             Catálogo de productos Biorem
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Nuevo Producto
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Nuevo Producto</DialogTitle>
-              <DialogDescription>
-                Agrega un producto al catálogo
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto">
-              <div className="grid gap-2">
-                <Label htmlFor="name">Nombre *</Label>
-                <Input
-                  id="name"
-                  placeholder="Ej: Biorem Drenajes"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="sku">SKU</Label>
-                  <Input
-                    id="sku"
-                    placeholder="Ej: BIO-DRN-001"
-                    value={formData.sku || ""}
-                    onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="category">Categoría</Label>
-                  <Input
-                    id="category"
-                    placeholder="Ej: Drenajes"
-                    value={formData.category || ""}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="description">Descripción</Label>
-                <Input
-                  id="description"
-                  placeholder="Descripción del producto"
-                  value={formData.description || ""}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="dosage">Dosificación</Label>
-                <Input
-                  id="dosage"
-                  placeholder="Ej: 50ml por aplicación"
-                  value={formData.dosage || ""}
-                  onChange={(e) => setFormData({ ...formData, dosage: e.target.value })}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="frequency">Frecuencia recomendada (días)</Label>
-                <Input
-                  id="frequency"
-                  type="number"
-                  min="1"
-                  value={formData.frequency_recommended || 7}
-                  onChange={(e) => setFormData({ ...formData, frequency_recommended: Number(e.target.value) })}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="instructions">Instrucciones de aplicación</Label>
-                <textarea
-                  id="instructions"
-                  className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder="Instrucciones detalladas para aplicar el producto..."
-                  value={formData.application_instructions || ""}
-                  onChange={(e) => setFormData({ ...formData, application_instructions: e.target.value })}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
-                Cancelar
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={saving || !formData.name.trim()}
-              >
-                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Guardar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={handleCreate}>
+          <Plus className="h-4 w-4 mr-2" />
+          Nuevo Producto
+        </Button>
       </div>
-
-      {/* Error message */}
-      {error && (
-        <Card className="border-destructive">
-          <CardContent className="pt-4">
-            <p className="text-sm text-destructive">{error}</p>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Search */}
       <div className="relative max-w-sm">
@@ -231,7 +230,7 @@ export default function ProductosPage() {
               {searchQuery ? "No se encontraron productos" : "No hay productos registrados"}
             </p>
             {!searchQuery && (
-              <Button className="mt-4" onClick={() => setIsDialogOpen(true)}>
+              <Button className="mt-4" onClick={handleCreate}>
                 <Plus className="h-4 w-4 mr-2" />
                 Agregar primer producto
               </Button>
@@ -244,7 +243,7 @@ export default function ProductosPage() {
       {!loading && products.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((product) => (
-            <Card key={product.id}>
+            <Card key={product.id} className={!product.active ? "opacity-60" : ""}>
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
@@ -260,9 +259,36 @@ export default function ProductosPage() {
                       )}
                     </div>
                   </div>
-                  <Badge variant={product.active ? "default" : "secondary"}>
-                    {product.active ? "Activo" : "Inactivo"}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={product.active ? "default" : "secondary"}>
+                      {product.active ? "Activo" : "Inactivo"}
+                    </Badge>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => handleEdit(product)}>
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleToggleActive(product)}>
+                          <Power className="h-4 w-4 mr-2" />
+                          {product.active ? "Desactivar" : "Activar"}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={() => handleDeleteClick(product)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4 mr-2" />
+                          Eliminar
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
@@ -294,6 +320,122 @@ export default function ProductosPage() {
           ))}
         </div>
       )}
+
+      {/* Create/Edit Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingProduct ? "Editar Producto" : "Nuevo Producto"}</DialogTitle>
+            <DialogDescription>
+              {editingProduct ? "Modifica los datos del producto" : "Agrega un producto al catálogo"}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">Nombre *</Label>
+              <Input
+                id="name"
+                placeholder="Ej: Biorem Drenajes"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="sku">SKU</Label>
+                <Input
+                  id="sku"
+                  placeholder="Ej: BIO-DRN-001"
+                  value={formData.sku || ""}
+                  onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="category">Categoría</Label>
+                <Input
+                  id="category"
+                  placeholder="Ej: Drenajes"
+                  value={formData.category || ""}
+                  onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="description">Descripción</Label>
+              <Input
+                id="description"
+                placeholder="Descripción del producto"
+                value={formData.description || ""}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="dosage">Dosificación</Label>
+                <Input
+                  id="dosage"
+                  placeholder="Ej: 50ml por aplicación"
+                  value={formData.dosage || ""}
+                  onChange={(e) => setFormData({ ...formData, dosage: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="frequency">Frecuencia (días)</Label>
+                <Input
+                  id="frequency"
+                  type="number"
+                  min="1"
+                  value={formData.frequency_recommended || 7}
+                  onChange={(e) => setFormData({ ...formData, frequency_recommended: Number(e.target.value) })}
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="instructions">Instrucciones de aplicación</Label>
+              <textarea
+                id="instructions"
+                className="flex min-h-[100px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder="Instrucciones detalladas para aplicar el producto..."
+                value={formData.application_instructions || ""}
+                onChange={(e) => setFormData({ ...formData, application_instructions: e.target.value })}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleSubmit}
+              disabled={saving || !formData.name.trim()}
+            >
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {editingProduct ? "Guardar cambios" : "Crear producto"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar producto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción eliminará <strong>{deletingProduct?.name}</strong>. Las ubicaciones que usan este producto quedarán sin producto asignado.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Eliminar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

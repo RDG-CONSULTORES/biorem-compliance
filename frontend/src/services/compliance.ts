@@ -56,4 +56,19 @@ export const complianceService = {
       validation_notes: notes,
     })
   },
+
+  /**
+   * Crea un recordatorio manual para una ubicación
+   */
+  async createReminder(data: {
+    location_id: number
+    contact_id: number
+    scheduled_for: string
+    timezone?: string
+  }): Promise<{ id: number }> {
+    return api.post<{ id: number }>("/api/compliance/reminders", {
+      ...data,
+      timezone: data.timezone || "America/Mexico_City",
+    })
+  },
 }
