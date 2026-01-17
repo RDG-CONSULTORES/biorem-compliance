@@ -19,6 +19,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
@@ -57,11 +58,13 @@ export function Header() {
           </SheetTrigger>
           <SheetContent side="left" className="w-72">
             <SheetHeader>
-              <SheetTitle className="flex items-center gap-2">
-                <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-                  <span className="text-primary-foreground font-bold text-sm">B</span>
-                </div>
-                Biorem
+              <SheetTitle>
+                <Image
+                  src="/logo-biorem.svg"
+                  alt="Biorem"
+                  width={120}
+                  height={36}
+                />
               </SheetTitle>
             </SheetHeader>
             <nav className="mt-6 space-y-1">
@@ -88,11 +91,13 @@ export function Header() {
         </Sheet>
 
         {/* Logo - mobile only */}
-        <div className="flex items-center gap-2 lg:hidden">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">B</span>
-          </div>
-          <span className="font-semibold">Biorem</span>
+        <div className="flex items-center lg:hidden">
+          <Image
+            src="/logo-biorem.svg"
+            alt="Biorem"
+            width={100}
+            height={30}
+          />
         </div>
 
         {/* Spacer for desktop */}

@@ -4,8 +4,8 @@
   "description": "Sistema de recordatorios y compliance para Biorem",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#0a0a0a",
+  "background_color": "#F9FBF3",
+  "theme_color": "#93d500",
   "icons": [
     {
       "src": "/icon-192.png",

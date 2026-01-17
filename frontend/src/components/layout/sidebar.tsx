@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
@@ -32,12 +33,15 @@ export function Sidebar() {
     <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-card border-r">
       {/* Logo */}
       <div className="flex items-center h-16 px-6 border-b">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <span className="text-primary-foreground font-bold text-sm">B</span>
-          </div>
-          <span className="font-semibold text-lg">Biorem</span>
-        </div>
+        <Link href="/dashboard" className="flex items-center">
+          <Image
+            src="/logo-biorem.svg"
+            alt="Biorem"
+            width={140}
+            height={42}
+            priority
+          />
+        </Link>
       </div>
 
       {/* Navigation */}
