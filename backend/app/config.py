@@ -67,11 +67,24 @@ class Settings(BaseSettings):
     ESCALATION_MINUTES: int = 120  # 2 horas sin respuesta
     MAX_ESCALATION_ATTEMPTS: int = 3
 
-    # Admin
-    ADMIN_TELEGRAM_IDS: list[int] = Field(
-        default=[],
-        description="IDs de Telegram de administradores"
+    # Admin (puede ser JSON array o string separado por comas)
+    ADMIN_TELEGRAM_IDS: str = Field(
+        default="",
+        description="IDs de Telegram de administradores (separados por coma)"
     )
+
+    @property
+    def admin_telegram_ids_list(self) -> list[int]:
+        """Retorna ADMIN_TELEGRAM_IDS como lista de enteros."""
+        if not self.ADMIN_TELEGRAM_IDS:
+            return []
+        try:
+            # Intentar parsear como JSON primero
+            import json
+            return json.loads(self.ADMIN_TELEGRAM_IDS)
+        except (json.JSONDecodeError, TypeError):
+            # Si falla, parsear como string separado por comas
+            return [int(id.strip()) for id in self.ADMIN_TELEGRAM_IDS.split(",") if id.strip()]
 
     # CORS (para el frontend)
     # Puede ser string separado por comas o lista
