@@ -2,6 +2,7 @@
 Handlers del Bot de Telegram para Biorem Compliance.
 
 Maneja comandos, vinculación de usuarios y recepción de fotos.
+Incluye Photo Guard para verificación de autenticidad.
 """
 import logging
 from datetime import datetime
@@ -23,6 +24,7 @@ from app.models.contact import Contact
 from app.models.location import Location
 from app.models.compliance import ComplianceRecord
 from app.models.reminder import ScheduledReminder, ReminderStatus
+from app.utils.geo import haversine_distance
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +32,7 @@ logger = logging.getLogger(__name__)
 WAITING_INVITE_CODE = 1
 WAITING_PHOTO = 2
 WAITING_LOCATION_SELECT = 3
+WAITING_LOCATION_FOR_PHOTO = 4  # Esperando ubicación antes de foto
 
 
 # ==================== HELPERS ====================
@@ -57,6 +60,38 @@ async def get_contact_by_invite_code(code: str, db: AsyncSession) -> Contact | N
         )
     )
     return result.scalar_one_or_none()
+
+
+def get_main_keyboard(has_pending: bool = False) -> ReplyKeyboardMarkup:
+    """
+    Genera el teclado principal del bot.
+
+    Args:
+        has_pending: Si hay recordatorios pendientes (muestra indicador)
+    """
+    photo_text = "📸 Enviar Foto" + (" 🔴" if has_pending else "")
+
+    keyboard = [
+        [KeyboardButton(photo_text), KeyboardButton("📊 Mi Estado")],
+        [KeyboardButton("📍 Compartir Ubicación", request_location=True)],
+        [KeyboardButton("❓ Ayuda")]
+    ]
+
+    return ReplyKeyboardMarkup(
+        keyboard,
+        resize_keyboard=True,
+        one_time_keyboard=False,
+        input_field_placeholder="Selecciona una opción o envía una foto"
+    )
+
+
+def get_location_request_keyboard() -> ReplyKeyboardMarkup:
+    """Teclado para solicitar ubicación antes de foto."""
+    keyboard = [
+        [KeyboardButton("📍 Compartir mi Ubicación", request_location=True)],
+        [KeyboardButton("❌ Cancelar")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
 
 
 # ==================== COMANDOS ====================
@@ -203,11 +238,13 @@ Comandos disponibles:
 
 Cómo funciona:
 1. Recibirás recordatorios para aplicar productos
-2. Cuando apliques el producto, envía una foto
-3. La foto será validada automáticamente
-4. Si hay problemas, tu supervisor será notificado
+2. Comparte tu ubicación primero
+3. Envía una foto de la aplicación
+4. La foto será validada automáticamente
+5. Si hay problemas, tu supervisor será notificado
 
 Consejos para las fotos:
+- Comparte tu ubicación antes de enviar la foto
 - Asegúrate de que se vea el producto o su envase
 - Incluye el área de drenaje/aplicación en la foto
 - Toma la foto en el momento de la aplicación
@@ -215,13 +252,128 @@ Consejos para las fotos:
 
 Problemas? Contacta a tu administrador.
     """
-    await update.message.reply_text(help_text)
+    await update.message.reply_text(help_text, reply_markup=get_main_keyboard())
+
+
+# ==================== MANEJO DE UBICACIÓN ====================
+
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler para recibir ubicación del usuario (Photo Guard)."""
+    user = update.effective_user
+    telegram_id = str(user.id)
+    location = update.message.location
+
+    async with await get_db_session() as db:
+        contact = await get_contact_by_telegram_id(telegram_id, db)
+
+        if not contact:
+            await update.message.reply_text(
+                "No tienes una cuenta vinculada.\n"
+                "Usa /start para vincular tu cuenta."
+            )
+            return
+
+        # Guardar ubicación del contacto
+        contact.update_location(
+            latitude=location.latitude,
+            longitude=location.longitude,
+            accuracy=location.horizontal_accuracy if hasattr(location, 'horizontal_accuracy') else None
+        )
+        contact.last_interaction_at = datetime.utcnow()
+
+        await db.commit()
+
+        # Verificar si estaba esperando ubicación para foto
+        if context.user_data.get('awaiting_location_for_photo'):
+            context.user_data['awaiting_location_for_photo'] = False
+            context.user_data['photo_location'] = {
+                'latitude': location.latitude,
+                'longitude': location.longitude,
+                'timestamp': datetime.utcnow()
+            }
+
+            await update.message.reply_text(
+                "✅ Ubicación recibida.\n\n"
+                "Ahora envía la foto de evidencia de la aplicación del producto.",
+                reply_markup=get_main_keyboard()
+            )
+        else:
+            await update.message.reply_text(
+                "📍 Ubicación registrada.\n\n"
+                "Tu ubicación ha sido guardada. Cuando envíes una foto, "
+                "se verificará que estés en la ubicación correcta.",
+                reply_markup=get_main_keyboard()
+            )
+
+
+async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handler para botones de texto del teclado."""
+    text = update.message.text
+
+    if text in ["📸 Enviar Foto", "📸 Enviar Foto 🔴"]:
+        await request_location_for_photo(update, context)
+    elif text == "📊 Mi Estado":
+        await status_command(update, context)
+    elif text == "❓ Ayuda":
+        await help_command(update, context)
+    elif text == "❌ Cancelar":
+        context.user_data['awaiting_location_for_photo'] = False
+        await update.message.reply_text(
+            "Operación cancelada.",
+            reply_markup=get_main_keyboard()
+        )
+
+
+async def request_location_for_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Solicita ubicación antes de aceptar foto."""
+    user = update.effective_user
+    telegram_id = str(user.id)
+
+    async with await get_db_session() as db:
+        contact = await get_contact_by_telegram_id(telegram_id, db)
+
+        if not contact:
+            await update.message.reply_text(
+                "No tienes una cuenta vinculada.\n"
+                "Usa /start para vincular tu cuenta."
+            )
+            return
+
+        # Verificar si ya tiene ubicación reciente (últimos 5 minutos)
+        if contact.has_recent_location(minutes=5):
+            context.user_data['photo_location'] = {
+                'latitude': contact.last_known_latitude,
+                'longitude': contact.last_known_longitude,
+                'timestamp': contact.last_location_at
+            }
+
+            await update.message.reply_text(
+                f"✅ Ubicación reciente detectada.\n\n"
+                "Ahora envía la foto de evidencia.",
+                reply_markup=get_main_keyboard()
+            )
+        else:
+            # Pedir ubicación
+            context.user_data['awaiting_location_for_photo'] = True
+
+            await update.message.reply_text(
+                "📍 Para verificar tu evidencia, primero comparte tu ubicación.\n\n"
+                "Esto nos ayuda a confirmar que estás en el lugar correcto.",
+                reply_markup=get_location_request_keyboard()
+            )
 
 
 # ==================== MANEJO DE FOTOS ====================
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler para recibir fotos de compliance."""
+    """
+    Handler para recibir fotos de compliance.
+
+    Incluye Photo Guard para verificación de autenticidad:
+    - Geolocalización (40 puntos)
+    - Ventana de tiempo (30 puntos)
+    - Validación IA (30 puntos)
+    """
     user = update.effective_user
     telegram_id = str(user.id)
 
@@ -262,10 +414,46 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             photo_height=photo.height
         )
 
-        # Si el mensaje incluye ubicación
-        if update.message.location:
+        # ============ PHOTO GUARD: Geolocalización ============
+        # Prioridad: 1) Ubicación en contexto, 2) Ubicación del contacto, 3) Ubicación en mensaje
+        photo_location = context.user_data.get('photo_location')
+
+        if photo_location:
+            compliance.photo_latitude = photo_location['latitude']
+            compliance.photo_longitude = photo_location['longitude']
+            # Limpiar ubicación del contexto después de usarla
+            context.user_data.pop('photo_location', None)
+        elif contact.has_recent_location(minutes=10):
+            compliance.photo_latitude = contact.last_known_latitude
+            compliance.photo_longitude = contact.last_known_longitude
+        elif update.message.location:
             compliance.photo_latitude = update.message.location.latitude
             compliance.photo_longitude = update.message.location.longitude
+
+        # Obtener ubicación esperada y calcular distancia
+        if pending_reminder and pending_reminder.location_id:
+            result = await db.execute(
+                select(Location).where(Location.id == pending_reminder.location_id)
+            )
+            location = result.scalar_one_or_none()
+
+            if location and location.latitude and location.longitude:
+                compliance.expected_latitude = location.latitude
+                compliance.expected_longitude = location.longitude
+
+                # Calcular distancia si tenemos ubicación del usuario
+                if compliance.photo_latitude and compliance.photo_longitude:
+                    compliance.distance_from_expected = haversine_distance(
+                        compliance.photo_latitude,
+                        compliance.photo_longitude,
+                        location.latitude,
+                        location.longitude
+                    )
+
+        # ============ PHOTO GUARD: Ventana de tiempo ============
+        if pending_reminder and pending_reminder.scheduled_for:
+            time_diff = datetime.utcnow() - pending_reminder.scheduled_for
+            compliance.time_diff_minutes = int(time_diff.total_seconds() / 60)
 
         db.add(compliance)
         await db.flush()
@@ -278,15 +466,27 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await db.commit()
 
-        # Confirmar recepción
+        # Construir mensaje de confirmación con info de ubicación
+        location_status = ""
+        if compliance.distance_from_expected is not None:
+            if compliance.distance_from_expected <= 500:
+                location_status = f"📍 Ubicación verificada ({compliance.distance_from_expected:.0f}m)\n"
+            else:
+                location_status = f"⚠️ Ubicación distante ({compliance.distance_from_expected:.0f}m)\n"
+        elif compliance.photo_latitude:
+            location_status = "📍 Ubicación registrada\n"
+        else:
+            location_status = "⚠️ Sin ubicación (menor certeza)\n"
+
         await update.message.reply_text(
-            "Foto recibida!\n\n"
+            f"Foto recibida!\n\n"
+            f"{location_status}"
             "Estamos validando tu evidencia con IA...\n"
-            "Te notificaremos el resultado en breve."
+            "Te notificaremos el resultado en breve.",
+            reply_markup=get_main_keyboard()
         )
 
-        # TODO: Enviar a validación con Claude Vision en background
-        # Esto se puede hacer con una cola de tareas o celery
+        # Enviar a validación con Claude Vision en background
         context.application.create_task(
             validate_photo_async(compliance.id, file_id, context)
         )
@@ -430,10 +630,17 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("ayuda", help_command))
     application.add_handler(CommandHandler("help", help_command))
 
+    # Handler de ubicación (Photo Guard)
+    application.add_handler(MessageHandler(filters.LOCATION, handle_location))
+
     # Handler de fotos
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-    logger.info("Bot handlers configured")
+    # Handler de botones de texto del teclado
+    button_filter = filters.Regex(r'^(📸 Enviar Foto|📸 Enviar Foto 🔴|📊 Mi Estado|❓ Ayuda|❌ Cancelar)$')
+    application.add_handler(MessageHandler(button_filter, handle_text_buttons))
+
+    logger.info("Bot handlers configured with Photo Guard")
 
 
 async def start_bot():

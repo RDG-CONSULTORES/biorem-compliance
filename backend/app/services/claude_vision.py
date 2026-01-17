@@ -24,6 +24,7 @@ class PhotoValidation(BaseModel):
     product_detected: bool
     drainage_area_visible: bool
     appears_recent: bool  # No parece foto vieja/reciclada
+    appears_screenshot: bool = False  # Detecta si es captura de pantalla o foto de foto
     issues: list[str]
     summary: str
 
@@ -98,18 +99,26 @@ CRITERIOS DE VALIDACIÓN ESTRICTOS:
    - La foto debe mostrar el acto de aplicación o evidencia clara de que se aplicó
    - Debe parecer un ambiente de trabajo real (cocina industrial, baño, área de servicio)
 
+4. DETECCIÓN DE FRAUDE (CRÍTICO):
+   - Detectar si es una CAPTURA DE PANTALLA (screenshot) de otra foto
+   - Detectar si es una FOTO DE UNA FOTO (foto tomada a una pantalla o imagen impresa)
+   - Señales de screenshot: bordes de interfaz, barra de estado, indicadores de batería/señal,
+     marcos de aplicaciones de mensajería, calidad pixelada, patrones de moiré
+   - Señales de foto de foto: reflejos de pantalla, bordes de monitor/teléfono, ángulo extraño,
+     distorsión de perspectiva, patrones de píxeles visibles
+
 RECHAZAR INMEDIATAMENTE si:
 - La foto muestra objetos no relacionados (computadoras, teclados, celulares, personas sin contexto)
 - No hay ningún producto de limpieza/tratamiento visible
 - No hay ningún drenaje, coladera o área de aplicación visible
 - La foto es claramente de prueba o irrelevante
-- Es una captura de pantalla o foto de otra foto
+- Es una captura de pantalla o foto de otra foto/pantalla
 
 ESCALA DE CONFIANZA:
-- 0.9-1.0: Producto Y drenaje claramente visibles, aplicación evidente
+- 0.9-1.0: Producto Y drenaje claramente visibles, aplicación evidente, foto original
 - 0.7-0.9: Producto visible con área de drenaje, pero no perfectamente claro
 - 0.5-0.7: Solo producto O solo drenaje visible (parcialmente válido)
-- 0.0-0.5: Foto irrelevante, de prueba, o sin elementos requeridos
+- 0.0-0.5: Foto irrelevante, de prueba, screenshot, o sin elementos requeridos
 
 RESPONDE UNICAMENTE CON JSON (sin markdown, sin explicaciones adicionales):
 {{
@@ -118,6 +127,7 @@ RESPONDE UNICAMENTE CON JSON (sin markdown, sin explicaciones adicionales):
     "product_detected": true/false,
     "drainage_area_visible": true/false,
     "appears_recent": true/false,
+    "appears_screenshot": true/false,
     "issues": ["lista de problemas específicos"],
     "summary": "Resumen breve en español de lo que se ve en la foto"
 }}"""

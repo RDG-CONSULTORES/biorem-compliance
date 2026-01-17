@@ -40,6 +40,17 @@ class ComplianceRecord(Base):
     photo_longitude = Column(Float, nullable=True)
     photo_location_accuracy = Column(Float, nullable=True)  # metros
 
+    # Coordenadas esperadas (de la ubicación registrada)
+    expected_latitude = Column(Float, nullable=True)
+    expected_longitude = Column(Float, nullable=True)
+
+    # Score de autenticidad (Photo Guard)
+    authenticity_score = Column(Integer, nullable=True)  # 0-100
+    location_verified = Column(Boolean, nullable=True)  # Ubicación coincide
+    time_verified = Column(Boolean, nullable=True)  # Dentro de ventana válida
+    distance_from_expected = Column(Float, nullable=True)  # Distancia en metros
+    time_diff_minutes = Column(Integer, nullable=True)  # Diferencia con recordatorio
+
     # Validación con IA (Claude Vision)
     ai_validation = Column(JSONB, nullable=True)  # Resultado completo de Claude
     ai_validated = Column(Boolean, nullable=True)  # True si IA aprobó
@@ -51,6 +62,7 @@ class ComplianceRecord(Base):
     ai_product_detected = Column(Boolean, nullable=True)
     ai_drainage_visible = Column(Boolean, nullable=True)
     ai_appears_recent = Column(Boolean, nullable=True)
+    ai_appears_screenshot = Column(Boolean, nullable=True)  # Detecta foto de pantalla
     ai_issues = Column(JSONB, nullable=True)  # Lista de problemas detectados
     ai_summary = Column(Text, nullable=True)
 
@@ -86,19 +98,85 @@ class ComplianceRecord(Base):
         self.ai_product_detected = validation_result.get("product_detected")
         self.ai_drainage_visible = validation_result.get("drainage_area_visible")
         self.ai_appears_recent = validation_result.get("appears_recent")
+        self.ai_appears_screenshot = validation_result.get("appears_screenshot", False)
         self.ai_issues = validation_result.get("issues", [])
         self.ai_summary = validation_result.get("summary")
         self.ai_validated_at = datetime.utcnow()
         if processing_time_ms:
             self.ai_processing_time_ms = processing_time_ms
 
-        # Si la IA valida con alta confianza Y detectó ambos criterios, marcar como válido
-        # Requiere: confianza >= 90%, producto detectado Y área de drenaje visible
-        if (self.ai_validated and
-            self.ai_confidence >= 0.90 and
-            self.ai_product_detected and
-            self.ai_drainage_visible):
+        # Calcular score de autenticidad después de la validación IA
+        self.calculate_authenticity_score()
+
+        # Si el score es alto y no hay problemas, marcar como válido
+        if (self.authenticity_score and
+            self.authenticity_score >= 80 and
+            not self.ai_appears_screenshot):
             self.is_valid = True
+
+    def calculate_authenticity_score(self):
+        """
+        Calcula el score de autenticidad basado en 3 factores:
+        - Geolocalización (40 puntos)
+        - Ventana de tiempo (30 puntos)
+        - Validación IA (30 puntos)
+        """
+        score = 0
+
+        # Factor 1: Geolocalización (40 puntos)
+        if self.photo_latitude and self.photo_longitude:
+            if self.distance_from_expected is not None:
+                if self.distance_from_expected <= 100:
+                    score += 40  # Muy cerca
+                    self.location_verified = True
+                elif self.distance_from_expected <= 300:
+                    score += 30  # Cerca
+                    self.location_verified = True
+                elif self.distance_from_expected <= 500:
+                    score += 20  # Aceptable
+                    self.location_verified = True
+                else:
+                    self.location_verified = False
+            else:
+                # Sin ubicación esperada, dar puntos parciales por compartir ubicación
+                score += 15
+                self.location_verified = None
+        else:
+            self.location_verified = False
+
+        # Factor 2: Ventana de tiempo (30 puntos)
+        if self.time_diff_minutes is not None:
+            abs_diff = abs(self.time_diff_minutes)
+            if abs_diff <= 30:
+                score += 30  # Muy reciente
+                self.time_verified = True
+            elif abs_diff <= 120:
+                score += 20  # Reciente
+                self.time_verified = True
+            elif abs_diff <= 240:
+                score += 10  # Aceptable
+                self.time_verified = True
+            else:
+                self.time_verified = False
+        else:
+            # Sin recordatorio asociado, dar puntos base
+            score += 15
+            self.time_verified = None
+
+        # Factor 3: Validación IA (30 puntos)
+        if self.ai_confidence is not None:
+            if self.ai_confidence >= 0.8:
+                score += 30
+            elif self.ai_confidence >= 0.6:
+                score += 20
+            elif self.ai_confidence >= 0.4:
+                score += 10
+
+        # Penalización por screenshot detectado
+        if self.ai_appears_screenshot:
+            score -= 50
+
+        self.authenticity_score = max(0, min(100, score))
 
     def set_manual_validation(self, is_valid: bool, validated_by_id: int, notes: str = None):
         """Establece validación manual."""

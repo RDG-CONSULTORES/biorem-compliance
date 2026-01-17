@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, Float
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -45,6 +45,12 @@ class Contact(Base):
     linked_at = Column(DateTime, nullable=True)  # Cuándo vinculó su Telegram
     last_interaction_at = Column(DateTime, nullable=True)
 
+    # Última ubicación conocida (para Photo Guard)
+    last_known_latitude = Column(Float, nullable=True)
+    last_known_longitude = Column(Float, nullable=True)
+    last_location_at = Column(DateTime, nullable=True)
+    last_location_accuracy = Column(Float, nullable=True)  # metros
+
     # Preferencias de notificación
     notifications_enabled = Column(Boolean, default=True)
     quiet_hours_start = Column(String(5), nullable=True)  # HH:MM
@@ -90,3 +96,18 @@ class Contact(Base):
     def is_linked(self) -> bool:
         """Verifica si el contacto tiene Telegram vinculado."""
         return self.telegram_id is not None and self.linked_at is not None
+
+    def update_location(self, latitude: float, longitude: float, accuracy: float = None):
+        """Actualiza la última ubicación conocida del contacto."""
+        self.last_known_latitude = latitude
+        self.last_known_longitude = longitude
+        self.last_location_at = datetime.utcnow()
+        if accuracy:
+            self.last_location_accuracy = accuracy
+
+    def has_recent_location(self, minutes: int = 5) -> bool:
+        """Verifica si tiene una ubicación reciente (últimos N minutos)."""
+        if not self.last_location_at:
+            return False
+        diff = datetime.utcnow() - self.last_location_at
+        return diff.total_seconds() < (minutes * 60)
