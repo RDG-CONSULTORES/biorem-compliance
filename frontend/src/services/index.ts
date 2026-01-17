@@ -1,0 +1,5 @@
+export { clientsService } from "./clients"
+export { contactsService } from "./contacts"
+export { locationsService } from "./locations"
+export { productsService } from "./products"
+export { complianceService } from "./compliance"
