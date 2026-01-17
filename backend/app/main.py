@@ -139,7 +139,8 @@ from app.api import (
     locations_router,
     products_router,
     contacts_router,
-    compliance_router
+    compliance_router,
+    reports_router
 )
 
 app.include_router(clients_router, prefix="/api/clients", tags=["Clientes"])
@@ -147,3 +148,4 @@ app.include_router(locations_router, prefix="/api/locations", tags=["Ubicaciones
 app.include_router(products_router, prefix="/api/products", tags=["Productos"])
 app.include_router(contacts_router, prefix="/api/contacts", tags=["Contactos"])
 app.include_router(compliance_router, prefix="/api/compliance", tags=["Compliance"])
+app.include_router(reports_router, prefix="/api/reports", tags=["Reportes"])

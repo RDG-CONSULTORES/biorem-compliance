@@ -1,8 +1,17 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   Building2,
   Users,
@@ -12,16 +21,27 @@ import {
   CheckCircle2,
   Clock,
   Loader2,
-  MessageCircle
+  MessageCircle,
+  TrendingUp,
+  BarChart3,
+  ArrowRight,
 } from "lucide-react"
-import { clientsService, contactsService, locationsService, complianceService } from "@/services"
-import type { Client, Contact, Location, ComplianceRecord } from "@/types"
+import { clientsService, contactsService, locationsService, complianceService, reportsService } from "@/services"
+import type { Client, Contact, Location, ComplianceRecord, PeriodPreset, ReportSummary } from "@/types"
+
+const periodOptions: { value: PeriodPreset; label: string }[] = [
+  { value: "today", label: "Hoy" },
+  { value: "this_week", label: "Esta semana" },
+  { value: "this_month", label: "Este mes" },
+  { value: "last_7_days", label: "Últimos 7 días" },
+  { value: "last_30_days", label: "Últimos 30 días" },
+]
 
 interface DashboardStats {
   clients: { total: number; active: number }
   contacts: { total: number; linked: number }
   locations: { total: number; active: number }
-  compliance: { rate: number; validated: number; pending: number }
+  compliance: { rate: number; validated: number; pending: number; rejected: number }
 }
 
 interface RecentActivity {
@@ -46,12 +66,14 @@ function getTimeAgo(date: Date): string {
 }
 
 export default function DashboardPage() {
+  const [period, setPeriod] = useState<PeriodPreset>("this_month")
   const [stats, setStats] = useState<DashboardStats>({
     clients: { total: 0, active: 0 },
     contacts: { total: 0, linked: 0 },
     locations: { total: 0, active: 0 },
-    compliance: { rate: 0, validated: 0, pending: 0 },
+    compliance: { rate: 0, validated: 0, pending: 0, rejected: 0 },
   })
+  const [reportSummary, setReportSummary] = useState<ReportSummary | null>(null)
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,11 +84,12 @@ export default function DashboardPage() {
         setLoading(true)
         setError(null)
 
-        const [clientsRes, contactsRes, locationsRes, complianceRes] = await Promise.all([
+        const [clientsRes, contactsRes, locationsRes, complianceRes, summaryRes] = await Promise.all([
           clientsService.list({ page_size: 100 }),
           contactsService.list({ page_size: 100 }),
           locationsService.list({ page_size: 100 }),
           complianceService.list({ page_size: 100 }),
+          reportsService.getSummary({ period }),
         ])
 
         // Calculate stats
@@ -79,22 +102,19 @@ export default function DashboardPage() {
         const linkedContacts = contacts.filter(c => c.telegram_id).length
         const activeLocations = locations.filter(l => l.active).length
 
-        const validatedCompliance = compliance.filter(
-          r => r.is_valid === true || (r.ai_validated && r.ai_confidence && r.ai_confidence >= 0.8)
-        ).length
-        const pendingCompliance = compliance.filter(
-          r => r.is_valid === null && (!r.ai_validated || (r.ai_confidence && r.ai_confidence < 0.8))
-        ).length
-        const complianceRate = compliance.length > 0
-          ? Math.round((validatedCompliance / compliance.length) * 100)
-          : 0
-
         setStats({
           clients: { total: clients.length, active: activeClients },
           contacts: { total: contacts.length, linked: linkedContacts },
           locations: { total: locations.length, active: activeLocations },
-          compliance: { rate: complianceRate, validated: validatedCompliance, pending: pendingCompliance },
+          compliance: {
+            rate: summaryRes.compliance_rate,
+            validated: summaryRes.validated,
+            pending: summaryRes.pending_review,
+            rejected: summaryRes.rejected,
+          },
         })
+
+        setReportSummary(summaryRes)
 
         // Build recent activity from compliance records
         const activities: RecentActivity[] = compliance
@@ -138,7 +158,7 @@ export default function DashboardPage() {
     }
 
     fetchData()
-  }, [])
+  }, [period])
 
   if (loading) {
     return (
@@ -176,18 +196,41 @@ export default function DashboardPage() {
       value: `${stats.compliance.rate}%`,
       description: "Tasa de cumplimiento",
       icon: ClipboardCheck,
-      trend: `${stats.compliance.pending} pendientes`,
+      trend: `${stats.compliance.validated} validados`,
+      trendColor: stats.compliance.rate >= 80 ? "text-green-500" : stats.compliance.rate >= 60 ? "text-yellow-500" : "text-red-500",
     },
   ]
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Resumen general del sistema de compliance
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Resumen general del sistema de compliance
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Select value={period} onValueChange={(v) => setPeriod(v as PeriodPreset)}>
+            <SelectTrigger className="w-[160px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {periodOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button variant="outline" asChild>
+            <Link href="/reports">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Ver Reportes
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Error message */}
@@ -218,7 +261,7 @@ export default function DashboardPage() {
                 {stat.trendIcon ? (
                   <stat.trendIcon className="h-3 w-3 text-blue-500" />
                 ) : (
-                  <CheckCircle2 className="h-3 w-3 text-green-500" />
+                  <CheckCircle2 className={`h-3 w-3 ${stat.trendColor || 'text-green-500'}`} />
                 )}
                 <span className="text-xs text-muted-foreground">{stat.trend}</span>
               </div>
@@ -226,6 +269,69 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      {/* Compliance Summary Card */}
+      {reportSummary && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Resumen de Compliance
+            </CardTitle>
+            <CardDescription>
+              Métricas del período seleccionado
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="p-4 rounded-lg bg-green-50 dark:bg-green-900/20">
+                <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span className="text-sm font-medium">Validados</span>
+                </div>
+                <p className="text-2xl font-bold mt-1">{reportSummary.validated}</p>
+              </div>
+              <div className="p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20">
+                <div className="flex items-center gap-2 text-yellow-700 dark:text-yellow-400">
+                  <Clock className="h-4 w-4" />
+                  <span className="text-sm font-medium">En Revisión</span>
+                </div>
+                <p className="text-2xl font-bold mt-1">{reportSummary.pending_review}</p>
+              </div>
+              <div className="p-4 rounded-lg bg-red-50 dark:bg-red-900/20">
+                <div className="flex items-center gap-2 text-red-700 dark:text-red-400">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="text-sm font-medium">Rechazados</span>
+                </div>
+                <p className="text-2xl font-bold mt-1">{reportSummary.rejected}</p>
+              </div>
+              <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20">
+                <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
+                  <Clock className="h-4 w-4" />
+                  <span className="text-sm font-medium">Tiempo Respuesta</span>
+                </div>
+                <p className="text-2xl font-bold mt-1">{reportSummary.avg_response_time_hours}h</p>
+              </div>
+            </div>
+            {reportSummary.locations_with_issues > 0 && (
+              <div className="mt-4 p-3 rounded-lg bg-orange-50 dark:bg-orange-900/20 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-orange-600" />
+                  <span className="text-sm text-orange-700 dark:text-orange-400">
+                    {reportSummary.locations_with_issues} ubicaciones requieren atención
+                  </span>
+                </div>
+                <Button variant="ghost" size="sm" asChild>
+                  <Link href="/reports">
+                    Ver detalles
+                    <ArrowRight className="h-4 w-4 ml-1" />
+                  </Link>
+                </Button>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent Activity */}
       <Card>
@@ -247,9 +353,10 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-4">
               {recentActivity.map((activity) => (
-                <div
+                <Link
                   key={activity.id}
-                  className="flex items-center gap-4 p-3 rounded-lg bg-muted/50"
+                  href={`/compliance/${activity.id}`}
+                  className="flex items-center gap-4 p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
                 >
                   {activity.type === "success" && (
                     <CheckCircle2 className="h-5 w-5 text-green-500 shrink-0" />
@@ -271,7 +378,7 @@ export default function DashboardPage() {
                   <Badge variant="secondary" className="shrink-0">
                     {activity.time}
                   </Badge>
-                </div>
+                </Link>
               ))}
             </div>
           )}

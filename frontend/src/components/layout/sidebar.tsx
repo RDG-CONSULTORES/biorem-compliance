@@ -10,6 +10,7 @@ import {
   MapPin,
   Package,
   ClipboardCheck,
+  BarChart3,
   Settings,
   LogOut,
 } from "lucide-react"
@@ -24,6 +25,7 @@ const navigation = [
   { name: "Ubicaciones", href: "/ubicaciones", icon: MapPin },
   { name: "Productos", href: "/productos", icon: Package },
   { name: "Compliance", href: "/compliance", icon: ClipboardCheck },
+  { name: "Reportes", href: "/reports", icon: BarChart3 },
 ]
 
 export function Sidebar() {

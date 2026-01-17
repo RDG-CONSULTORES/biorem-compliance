@@ -254,3 +254,69 @@ export interface DashboardStats {
   compliance_rate: number
   pending_reminders: number
 }
+
+// ==================== REPORTS ====================
+
+export type PeriodPreset =
+  | "today"
+  | "this_week"
+  | "this_month"
+  | "last_7_days"
+  | "last_30_days"
+  | "last_90_days"
+  | "custom"
+
+export type PeriodType = "day" | "week" | "month"
+
+export interface ReportSummary {
+  period_start: string | null
+  period_end: string | null
+  total_records: number
+  validated: number
+  rejected: number
+  pending_review: number
+  compliance_rate: number
+  avg_response_time_hours: number
+  avg_ai_confidence: number
+  total_locations: number
+  locations_with_issues: number
+}
+
+export interface ClientComplianceReport {
+  client_id: number
+  client_name: string
+  business_type: string | null
+  total_locations: number
+  total_records: number
+  validated: number
+  rejected: number
+  pending_review: number
+  compliance_rate: number
+  last_activity: string | null
+}
+
+export interface LocationComplianceReport {
+  location_id: number
+  location_name: string
+  client_id: number
+  client_name: string
+  total_records: number
+  validated: number
+  rejected: number
+  pending_review: number
+  compliance_rate: number
+  last_compliance_at: string | null
+  days_since_compliance: number | null
+  frequency_days: number
+  status: "ok" | "pending" | "overdue" | "critical"
+}
+
+export interface ComplianceTrend {
+  period_key: string
+  period_label: string
+  total_records: number
+  validated: number
+  rejected: number
+  pending_review: number
+  compliance_rate: number
+}

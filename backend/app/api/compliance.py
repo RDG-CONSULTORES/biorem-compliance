@@ -34,6 +34,7 @@ router = APIRouter()
 async def list_compliance_records(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    client_id: Optional[int] = Query(None, description="Filtrar por cliente"),
     location_id: Optional[int] = None,
     contact_id: Optional[int] = None,
     is_valid: Optional[bool] = None,
@@ -43,6 +44,10 @@ async def list_compliance_records(
 ):
     """Lista registros de compliance con filtros."""
     query = select(ComplianceRecord)
+
+    # Filtro por cliente (requiere join con Location)
+    if client_id:
+        query = query.join(Location).where(Location.client_id == client_id)
 
     # Filtros
     if location_id:

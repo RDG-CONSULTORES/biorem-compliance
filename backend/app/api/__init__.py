@@ -5,6 +5,7 @@ from app.api.locations import router as locations_router
 from app.api.products import router as products_router
 from app.api.contacts import router as contacts_router
 from app.api.compliance import router as compliance_router
+from app.api.reports import router as reports_router
 
 __all__ = [
     "clients_router",
@@ -12,4 +13,5 @@ __all__ = [
     "products_router",
     "contacts_router",
     "compliance_router",
+    "reports_router",
 ]
