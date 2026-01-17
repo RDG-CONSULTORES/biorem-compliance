@@ -184,33 +184,53 @@ async def create_reminder(
     db: AsyncSession = Depends(get_db)
 ):
     """Crea un recordatorio manual."""
-    # Verificar ubicación
-    result = await db.execute(
-        select(Location).where(Location.id == reminder_data.location_id)
-    )
-    if not result.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Ubicación no encontrada")
+    import logging
+    logger = logging.getLogger(__name__)
 
-    # Verificar contacto
-    result = await db.execute(
-        select(Contact).where(Contact.id == reminder_data.contact_id)
-    )
-    contact = result.scalar_one_or_none()
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contacto no encontrado")
+    try:
+        logger.info(f"Creating reminder: {reminder_data}")
 
-    if not contact.telegram_id:
-        raise HTTPException(
-            status_code=400,
-            detail="El contacto no tiene Telegram vinculado"
+        # Verificar ubicación
+        result = await db.execute(
+            select(Location).where(Location.id == reminder_data.location_id)
         )
+        location = result.scalar_one_or_none()
+        if not location:
+            raise HTTPException(status_code=404, detail="Ubicación no encontrada")
 
-    reminder = ScheduledReminder(**reminder_data.model_dump())
-    db.add(reminder)
-    await db.flush()
-    await db.refresh(reminder)
+        # Verificar contacto
+        result = await db.execute(
+            select(Contact).where(Contact.id == reminder_data.contact_id)
+        )
+        contact = result.scalar_one_or_none()
+        if not contact:
+            raise HTTPException(status_code=404, detail="Contacto no encontrado")
 
-    return ReminderResponse.model_validate(reminder)
+        if not contact.telegram_id:
+            raise HTTPException(
+                status_code=400,
+                detail="El contacto no tiene Telegram vinculado"
+            )
+
+        # Crear recordatorio
+        reminder = ScheduledReminder(
+            location_id=reminder_data.location_id,
+            contact_id=reminder_data.contact_id,
+            scheduled_for=reminder_data.scheduled_for,
+            timezone=reminder_data.timezone
+        )
+        db.add(reminder)
+        await db.flush()
+        await db.refresh(reminder)
+
+        logger.info(f"Reminder created with id: {reminder.id}")
+
+        return ReminderResponse.model_validate(reminder)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating reminder: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 
 @router.delete("/reminders/{reminder_id}", status_code=204)
