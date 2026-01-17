@@ -17,33 +17,45 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Maneja el ciclo de vida de la aplicación."""
-    # Startup
-    logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
-    logger.info(f"Environment: {settings.ENVIRONMENT}")
-
-    # Crear tablas si no existen
-    async with async_engine.begin() as conn:
-        # Importar todos los modelos para que SQLAlchemy los conozca
-        from app.models import (
-            Client, Location, Contact, Product,
-            ScheduledReminder, ComplianceRecord, NotificationLog
-        )
-        await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables created/verified")
-
-    # Iniciar bot de Telegram
     telegram_app = None
-    if settings.TELEGRAM_BOT_TOKEN:
-        try:
-            from app.bot.handlers import start_bot, stop_bot
-            from app.bot.scheduler import start_scheduler, stop_scheduler
 
-            telegram_app = await start_bot()
-            if telegram_app:
-                await start_scheduler(telegram_app.bot)
-                logger.info("Telegram bot and scheduler started")
+    try:
+        # Startup
+        logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
+        logger.info(f"Environment: {settings.ENVIRONMENT}")
+
+        # Crear tablas si no existen
+        try:
+            async with async_engine.begin() as conn:
+                # Importar todos los modelos para que SQLAlchemy los conozca
+                from app.models import (
+                    Client, Location, Contact, Product,
+                    ScheduledReminder, ComplianceRecord, NotificationLog
+                )
+                await conn.run_sync(Base.metadata.create_all)
+                logger.info("Database tables created/verified")
         except Exception as e:
-            logger.error(f"Failed to start Telegram bot: {e}")
+            logger.error(f"Database initialization error: {e}")
+            # Continue anyway - tables might already exist
+
+        # Iniciar bot de Telegram
+        if settings.TELEGRAM_BOT_TOKEN:
+            try:
+                from app.bot.handlers import start_bot, stop_bot
+                from app.bot.scheduler import start_scheduler, stop_scheduler
+
+                telegram_app = await start_bot()
+                if telegram_app:
+                    await start_scheduler(telegram_app.bot)
+                    logger.info("Telegram bot and scheduler started")
+            except Exception as e:
+                logger.error(f"Failed to start Telegram bot: {e}")
+                # Continue anyway - API should still work
+
+        logger.info("Application startup complete - ready to serve requests")
+
+    except Exception as e:
+        logger.error(f"Critical startup error: {e}")
 
     yield
 
@@ -83,10 +95,16 @@ app.add_middleware(
 )
 
 
-# Health check endpoint
+# Health check endpoint - MUST respond quickly for Railway
 @app.get("/health")
-async def health_check():
+def health_check():
     """Endpoint de salud para Railway y monitoreo."""
+    return {"status": "ok"}
+
+
+@app.get("/health/detailed")
+async def health_check_detailed():
+    """Endpoint de salud detallado."""
     return {
         "status": "healthy",
         "app": settings.APP_NAME,
