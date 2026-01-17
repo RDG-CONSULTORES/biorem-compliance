@@ -19,7 +19,6 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet"
 import Link from "next/link"
-import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
@@ -32,6 +31,8 @@ import {
   Settings,
   LogOut,
 } from "lucide-react"
+import { Logo } from "@/components/ui/logo"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -59,12 +60,7 @@ export function Header() {
           <SheetContent side="left" className="w-72">
             <SheetHeader>
               <SheetTitle>
-                <Image
-                  src="/logo-biorem.svg"
-                  alt="Biorem"
-                  width={120}
-                  height={36}
-                />
+                <Logo width={120} height={36} />
               </SheetTitle>
             </SheetHeader>
             <nav className="mt-6 space-y-1">
@@ -92,12 +88,7 @@ export function Header() {
 
         {/* Logo - mobile only */}
         <div className="flex items-center lg:hidden">
-          <Image
-            src="/logo-biorem.svg"
-            alt="Biorem"
-            width={100}
-            height={30}
-          />
+          <Logo width={100} height={30} />
         </div>
 
         {/* Spacer for desktop */}
@@ -105,6 +96,7 @@ export function Header() {
 
         {/* Right side */}
         <div className="flex items-center gap-2">
+          <ThemeToggle />
           <Button variant="ghost" size="icon" className="relative">
             <Bell className="h-5 w-5" />
             <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full" />

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { ThemeProvider } from "@/components/providers/theme-provider";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -46,15 +47,22 @@ export default function RootLayout({
       <body
         className={`${dmSans.variable} ${geistMono.variable} antialiased min-h-screen`}
       >
-        {children}
-        <Toaster
-          position="top-right"
-          richColors
-          closeButton
-          toastOptions={{
-            duration: 4000,
-          }}
-        />
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="light"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+          <Toaster
+            position="top-right"
+            richColors
+            closeButton
+            toastOptions={{
+              duration: 4000,
+            }}
+          />
+        </ThemeProvider>
       </body>
     </html>
   );
