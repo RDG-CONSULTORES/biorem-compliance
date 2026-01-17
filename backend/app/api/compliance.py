@@ -1,5 +1,5 @@
 """API endpoints para Compliance y Recordatorios."""
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -26,6 +26,24 @@ from app.schemas.compliance import (
 )
 
 router = APIRouter()
+
+
+# ==================== BACKGROUND TASKS ====================
+
+async def send_reminder_background(reminder_id: int):
+    """
+    Envía un recordatorio en background.
+    Esta función se ejecuta después de que la respuesta ya fue enviada al usuario.
+    """
+    try:
+        from app.bot.scheduler import send_reminder_immediately
+        sent = await send_reminder_immediately(reminder_id)
+        if sent:
+            logger.info(f"Background: Reminder {reminder_id} sent successfully")
+        else:
+            logger.warning(f"Background: Failed to send reminder {reminder_id}")
+    except Exception as e:
+        logger.error(f"Background: Error sending reminder {reminder_id}: {e}")
 
 
 # ==================== COMPLIANCE ====================
@@ -271,13 +289,15 @@ async def list_reminders(
 @router.post("/reminders", response_model=ReminderResponse, status_code=201)
 async def create_reminder(
     reminder_data: ReminderCreate,
+    background_tasks: BackgroundTasks,
     send_now: bool = Query(True, description="Enviar inmediatamente"),
     db: AsyncSession = Depends(get_db)
 ):
-    """Crea un recordatorio manual y opcionalmente lo envía inmediatamente."""
-    import logging
-    logger = logging.getLogger(__name__)
+    """
+    Crea un recordatorio manual y opcionalmente lo envía inmediatamente.
 
+    El envío se realiza en background para respuesta instantánea al usuario.
+    """
     try:
         logger.info(f"Creating reminder: {reminder_data}, send_now={send_now}")
 
@@ -321,19 +341,10 @@ async def create_reminder(
 
         logger.info(f"Reminder created with id: {reminder.id}")
 
-        # Enviar inmediatamente si se solicita
+        # Enviar en background si se solicita (no bloquea la respuesta)
         if send_now:
-            try:
-                from app.bot.scheduler import send_reminder_immediately
-                sent = await send_reminder_immediately(reminder.id)
-                if sent:
-                    logger.info(f"Reminder {reminder.id} sent immediately")
-                    await db.refresh(reminder)  # Refrescar para obtener el status actualizado
-                else:
-                    logger.warning(f"Failed to send reminder {reminder.id} immediately")
-            except Exception as e:
-                logger.error(f"Error sending reminder immediately: {e}")
-                # No fallar la creación, el scheduler lo enviará después
+            background_tasks.add_task(send_reminder_background, reminder.id)
+            logger.info(f"Reminder {reminder.id} queued for immediate background send")
 
         return ReminderResponse.model_validate(reminder)
     except HTTPException:

@@ -228,10 +228,12 @@ async def send_reminder(reminder: ScheduledReminder, db: AsyncSession):
             f"Por favor, aplica el producto y envía una foto de evidencia."
         )
 
-        # Enviar mensaje
+        # Enviar mensaje (con timeout de 10 segundos para evitar bloqueos)
         sent_message = await bot.send_message(
             chat_id=contact.telegram_id,
-            text=message
+            text=message,
+            read_timeout=10,
+            write_timeout=10
         )
 
         # Actualizar recordatorio
@@ -343,7 +345,9 @@ async def escalate_reminder(reminder: ScheduledReminder, db: AsyncSession):
 
         await bot.send_message(
             chat_id=supervisor.telegram_id,
-            text=message
+            text=message,
+            read_timeout=10,
+            write_timeout=10
         )
 
         # Actualizar recordatorio

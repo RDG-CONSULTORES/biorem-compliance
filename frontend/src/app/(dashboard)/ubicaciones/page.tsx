@@ -297,7 +297,7 @@ export default function UbicacionesPage() {
         contact_id: selectedContactId,
         scheduled_for: scheduledFor,
       })
-      toast.success("Recordatorio enviado correctamente")
+      toast.success("Recordatorio en camino")
       setIsReminderDialogOpen(false)
       setReminderLocation(null)
     } catch (err) {
