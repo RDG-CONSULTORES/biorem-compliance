@@ -67,7 +67,16 @@ class Contact(Base):
         foreign_keys="[ScheduledReminder.escalated_to]",
         overlaps="contact,reminders"
     )
-    compliance_records = relationship("ComplianceRecord", back_populates="contact")
+    compliance_records = relationship(
+        "ComplianceRecord",
+        back_populates="contact",
+        foreign_keys="[ComplianceRecord.contact_id]"
+    )
+    validated_records = relationship(
+        "ComplianceRecord",
+        foreign_keys="[ComplianceRecord.validated_by]",
+        overlaps="contact,compliance_records"
+    )
     notifications = relationship("NotificationLog", back_populates="contact")
 
     def __repr__(self):
