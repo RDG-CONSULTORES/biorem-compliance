@@ -57,7 +57,16 @@ class Contact(Base):
 
     # Relaciones
     client = relationship("Client", back_populates="contacts")
-    reminders = relationship("ScheduledReminder", back_populates="contact")
+    reminders = relationship(
+        "ScheduledReminder",
+        back_populates="contact",
+        foreign_keys="[ScheduledReminder.contact_id]"
+    )
+    escalated_reminders = relationship(
+        "ScheduledReminder",
+        foreign_keys="[ScheduledReminder.escalated_to]",
+        overlaps="contact,reminders"
+    )
     compliance_records = relationship("ComplianceRecord", back_populates="contact")
     notifications = relationship("NotificationLog", back_populates="contact")
 
