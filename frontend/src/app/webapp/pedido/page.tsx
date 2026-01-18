@@ -47,6 +47,7 @@ interface Product {
   sku?: string;
   dosage?: string;
   category?: string;
+  thumbnail_url?: string;
   active: boolean;
 }
 
@@ -486,7 +487,14 @@ export default function PedidoPage() {
                 <Card key={product.id} className={qty > 0 ? "border-primary" : ""}>
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
+                      {product.thumbnail_url && (
+                        <img
+                          src={product.thumbnail_url}
+                          alt={product.name}
+                          className="h-14 w-14 rounded-lg object-cover flex-shrink-0"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
                         <p className="font-medium">{product.name}</p>
                         {product.description && (
                           <p className="text-sm text-muted-foreground line-clamp-2">
@@ -500,7 +508,7 @@ export default function PedidoPage() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-shrink-0">
                         <Button
                           variant="outline"
                           size="icon"

@@ -231,7 +231,18 @@ export default function ProductosPage() {
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2">
-                    <div className="p-2 rounded-lg bg-primary/10">
+                    {product.thumbnail_url ? (
+                      <img
+                        src={product.thumbnail_url}
+                        alt={product.name}
+                        className="h-10 w-10 rounded-lg object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                    ) : null}
+                    <div className={`p-2 rounded-lg bg-primary/10 ${product.thumbnail_url ? 'hidden' : ''}`}>
                       <Beaker className="h-4 w-4 text-primary" />
                     </div>
                     <div>
