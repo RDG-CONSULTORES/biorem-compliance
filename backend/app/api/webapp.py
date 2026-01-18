@@ -228,7 +228,7 @@ async def get_user_context(
                 detail="Contacto sin cliente asociado"
             )
 
-        logger.info(f"[user-context] Client: {contact.client_id} - {contact.client.company_name}")
+        logger.info(f"[user-context] Client: {contact.client_id} - {contact.client.name}")
 
         # Obtener ubicaciones del cliente
         result = await db.execute(
@@ -262,7 +262,7 @@ async def get_user_context(
             name=contact.name,
             role=role_value,
             client_id=contact.client_id,
-            client_name=contact.client.company_name,
+            client_name=contact.client.name,
             locations=[
                 LocationContext(
                     id=loc.id,
