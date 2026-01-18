@@ -163,107 +163,130 @@ async def create_evaluation(
     - Guarda firma
     - Notifica a supervisores si no pasa
     """
-    # Buscar contacto por telegram_id
-    result = await db.execute(
-        select(Contact).where(Contact.telegram_id == data.telegram_user_id)
-    )
-    contact = result.scalar_one_or_none()
+    try:
+        logger.info(f"[create_evaluation] Received evaluation from telegram_id: {data.telegram_user_id}")
+        logger.info(f"[create_evaluation] Location ID: {data.location_id}")
+        logger.info(f"[create_evaluation] Answers count: {len(data.answers)}")
 
-    if not contact:
-        raise HTTPException(
-            status_code=404,
-            detail="Usuario no vinculado. Usa /start en el bot primero."
-        )
-
-    # Verificar ubicación
-    result = await db.execute(
-        select(Location).where(Location.id == data.location_id)
-    )
-    location = result.scalar_one_or_none()
-
-    if not location:
-        raise HTTPException(status_code=404, detail="Ubicación no encontrada")
-
-    # Obtener plantilla si se especificó
-    template = None
-    if data.template_id:
+        # Buscar contacto por telegram_id
         result = await db.execute(
-            select(EvaluationTemplate).where(EvaluationTemplate.id == data.template_id)
+            select(Contact).where(Contact.telegram_id == data.telegram_user_id)
         )
-        template = result.scalar_one_or_none()
+        contact = result.scalar_one_or_none()
 
-    # Convertir respuestas al formato esperado
-    answers_dict = {
-        q_id: answer.model_dump() for q_id, answer in data.answers.items()
-    }
+        if not contact:
+            raise HTTPException(
+                status_code=404,
+                detail="Usuario no vinculado. Usa /start en el bot primero."
+            )
 
-    # Crear evaluación
-    now = datetime.utcnow()
-    evaluation = SelfEvaluation(
-        template_id=data.template_id,
-        location_id=data.location_id,
-        contact_id=contact.id,
-        answers=answers_dict,
-        photos=data.photos,
-        signature_data=data.signature_data,
-        signed_by_name=data.signed_by_name,
-        signed_at=now,
-        signature_latitude=data.signature_latitude,
-        signature_longitude=data.signature_longitude,
-        telegram_user_id=data.telegram_user_id,
-        started_at=data.started_at,
-        completed_at=now,
-        # Valores temporales - se calcularán abajo
-        total_score=0,
-        passed=False
-    )
+        logger.info(f"[create_evaluation] Contact found: {contact.id} - {contact.name}")
 
-    # Calcular score
-    if template:
-        evaluation.calculate_score(template)
-    else:
-        # Sin plantilla, calcular score simple basado en respuestas
-        yes_count = sum(
-            1 for a in answers_dict.values()
-            if a.get("value") in ["yes", True]
+        # Verificar ubicación
+        result = await db.execute(
+            select(Location).where(Location.id == data.location_id)
         )
-        total_count = sum(
-            1 for a in answers_dict.values()
-            if a.get("value") not in ["na", None]
+        location = result.scalar_one_or_none()
+
+        if not location:
+            raise HTTPException(status_code=404, detail="Ubicación no encontrada")
+
+        logger.info(f"[create_evaluation] Location found: {location.id} - {location.name}")
+
+        # Obtener plantilla si se especificó
+        template = None
+        if data.template_id:
+            result = await db.execute(
+                select(EvaluationTemplate).where(EvaluationTemplate.id == data.template_id)
+            )
+            template = result.scalar_one_or_none()
+
+        # Convertir respuestas al formato esperado
+        answers_dict = {
+            q_id: answer.model_dump() for q_id, answer in data.answers.items()
+        }
+        logger.info(f"[create_evaluation] Answers prepared: {list(answers_dict.keys())}")
+
+        # Crear evaluación
+        now = datetime.utcnow()
+        evaluation = SelfEvaluation(
+            template_id=data.template_id,
+            location_id=data.location_id,
+            contact_id=contact.id,
+            answers=answers_dict,
+            photos=data.photos,
+            signature_data=data.signature_data,
+            signed_by_name=data.signed_by_name,
+            signed_at=now,
+            signature_latitude=data.signature_latitude,
+            signature_longitude=data.signature_longitude,
+            telegram_user_id=data.telegram_user_id,
+            started_at=data.started_at,
+            completed_at=now,
+            # Valores temporales - se calcularán abajo
+            total_score=0,
+            passed=False
         )
 
-        if total_count > 0:
-            evaluation.total_score = round((yes_count / total_count) * 100, 1)
+        # Calcular score
+        if template:
+            evaluation.calculate_score(template)
         else:
-            evaluation.total_score = 100.0
+            # Sin plantilla, calcular score simple basado en respuestas
+            yes_count = sum(
+                1 for a in answers_dict.values()
+                if a.get("value") in ["yes", True]
+            )
+            total_count = sum(
+                1 for a in answers_dict.values()
+                if a.get("value") not in ["na", None]
+            )
 
-        evaluation.passed = evaluation.total_score >= 70.0
+            if total_count > 0:
+                evaluation.total_score = round((yes_count / total_count) * 100, 1)
+            else:
+                evaluation.total_score = 100.0
 
-    db.add(evaluation)
-    await db.commit()
-    await db.refresh(evaluation)
+            evaluation.passed = evaluation.total_score >= 70.0
 
-    # TODO: Notificar a supervisores si no pasó
-    if not evaluation.passed:
-        logger.warning(
-            f"Evaluación {evaluation.id} NO PASÓ: "
-            f"score={evaluation.total_score}, location={location.name}"
+        logger.info(f"[create_evaluation] Score calculated: {evaluation.total_score}, passed: {evaluation.passed}")
+
+        db.add(evaluation)
+        await db.commit()
+        await db.refresh(evaluation)
+
+        logger.info(f"[create_evaluation] Evaluation saved with ID: {evaluation.id}")
+
+        # TODO: Notificar a supervisores si no pasó
+        if not evaluation.passed:
+            logger.warning(
+                f"Evaluación {evaluation.id} NO PASÓ: "
+                f"score={evaluation.total_score}, location={location.name}"
+            )
+            # background_tasks.add_task(notify_supervisor_failed_evaluation, evaluation.id)
+
+        return EvaluationResponse(
+            id=evaluation.id,
+            location_id=evaluation.location_id,
+            location_name=location.name,
+            contact_id=evaluation.contact_id,
+            contact_name=contact.name,
+            total_score=evaluation.total_score,
+            passed=evaluation.passed,
+            area_scores=evaluation.area_scores,
+            signed_by_name=evaluation.signed_by_name,
+            signed_at=evaluation.signed_at,
+            created_at=evaluation.created_at
         )
-        # background_tasks.add_task(notify_supervisor_failed_evaluation, evaluation.id)
 
-    return EvaluationResponse(
-        id=evaluation.id,
-        location_id=evaluation.location_id,
-        location_name=location.name,
-        contact_id=evaluation.contact_id,
-        contact_name=contact.name,
-        total_score=evaluation.total_score,
-        passed=evaluation.passed,
-        area_scores=evaluation.area_scores,
-        signed_by_name=evaluation.signed_by_name,
-        signed_at=evaluation.signed_at,
-        created_at=evaluation.created_at
-    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[create_evaluation] Error: {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno al guardar evaluación: {type(e).__name__}: {str(e)}"
+        )
 
 
 @router.get("/", response_model=List[EvaluationResponse])
