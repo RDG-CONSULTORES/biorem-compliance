@@ -130,18 +130,25 @@ async def lifespan(app: FastAPI):
         # Esto es necesario porque create_all no agrega columnas a tablas existentes
         await ensure_photo_guard_columns()
 
-        # Iniciar bot de Telegram
+        # Iniciar bot de Telegram con delay para evitar conflictos
         if settings.TELEGRAM_BOT_TOKEN:
             try:
+                import asyncio
                 from app.bot.handlers import start_bot, stop_bot
                 from app.bot.scheduler import start_scheduler, stop_scheduler
+
+                # Esperar 10 segundos para asegurar que cualquier instancia anterior haya terminado
+                logger.info("Waiting 10 seconds before starting bot to avoid conflicts...")
+                await asyncio.sleep(10)
 
                 telegram_app = await start_bot()
                 if telegram_app:
                     await start_scheduler(telegram_app.bot)
-                    logger.info("Telegram bot and scheduler started")
+                    logger.info("Telegram bot and scheduler started successfully!")
+                else:
+                    logger.warning("Bot returned None - may have failed to start")
             except Exception as e:
-                logger.error(f"Failed to start Telegram bot: {e}")
+                logger.error(f"Failed to start Telegram bot: {e}", exc_info=True)
                 # Continue anyway - API should still work
 
         logger.info("Application startup complete - ready to serve requests")
