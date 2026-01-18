@@ -74,7 +74,7 @@ def get_main_keyboard(has_pending: bool = False) -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(photo_text), KeyboardButton("📊 Mi Estado")],
         [KeyboardButton("📍 Compartir Ubicación", request_location=True)],
-        [KeyboardButton("🏠 Menú"), KeyboardButton("❓ Ayuda")]
+        [KeyboardButton("🌀 Menú"), KeyboardButton("❓ Ayuda")]
     ]
 
     return ReplyKeyboardMarkup(
@@ -429,7 +429,7 @@ async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
                 "Operación cancelada.",
                 reply_markup=get_main_keyboard()
             )
-        elif text == "🏠 Menú":
+        elif text == "🌀 Menú":
             logger.info(f"Procesando: Menú Principal para user_id={user_id}")
             # Limpiar cualquier estado pendiente
             context.user_data.pop('awaiting_location_for_photo', None)
@@ -870,7 +870,7 @@ def setup_handlers(application: Application):
     )
 
     # Handler de botones de texto del teclado - PRIORIDAD ALTA
-    button_filter = filters.Regex(r'^(📸 Enviar Foto|📸 Enviar Foto 🔴|📊 Mi Estado|❓ Ayuda|❌ Cancelar|🏠 Menú)$')
+    button_filter = filters.Regex(r'^(📸 Enviar Foto|📸 Enviar Foto 🔴|📊 Mi Estado|❓ Ayuda|❌ Cancelar|🌀 Menú)$')
     application.add_handler(
         MessageHandler(button_filter, handle_text_buttons),
         group=-1
