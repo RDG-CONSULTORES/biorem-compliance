@@ -46,35 +46,54 @@ async def ensure_photo_guard_columns():
     """
     columns_sql = [
         # Contacts - Photo Guard location tracking
-        "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS last_known_latitude FLOAT",
-        "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS last_known_longitude FLOAT",
+        "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS last_known_latitude DOUBLE PRECISION",
+        "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS last_known_longitude DOUBLE PRECISION",
         "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS last_location_at TIMESTAMP",
-        "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS last_location_accuracy FLOAT",
+        "ALTER TABLE contacts ADD COLUMN IF NOT EXISTS last_location_accuracy DOUBLE PRECISION",
 
         # Compliance Records - Photo Guard validation
-        "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS expected_latitude FLOAT",
-        "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS expected_longitude FLOAT",
+        "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS expected_latitude DOUBLE PRECISION",
+        "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS expected_longitude DOUBLE PRECISION",
         "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS authenticity_score INTEGER",
         "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS location_verified BOOLEAN",
         "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS time_verified BOOLEAN",
-        "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS distance_from_expected FLOAT",
+        "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS distance_from_expected DOUBLE PRECISION",
         "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS time_diff_minutes INTEGER",
         "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS ai_appears_screenshot BOOLEAN",
     ]
 
+    logger.info("=== INICIANDO VERIFICACIÓN DE COLUMNAS PHOTO GUARD ===")
+
     try:
         async with async_engine.begin() as conn:
+            # Primero verificar qué columnas existen
+            result = await conn.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'contacts'
+            """))
+            existing_contacts_cols = [row[0] for row in result.fetchall()]
+            logger.info(f"Columnas existentes en contacts: {existing_contacts_cols}")
+
+            result = await conn.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'compliance_records'
+            """))
+            existing_compliance_cols = [row[0] for row in result.fetchall()]
+            logger.info(f"Columnas existentes en compliance_records: {existing_compliance_cols}")
+
+            # Ahora agregar las columnas faltantes
             for sql in columns_sql:
                 try:
+                    logger.info(f"Ejecutando: {sql}")
                     await conn.execute(text(sql))
+                    logger.info(f"  ✓ OK")
                 except Exception as col_error:
-                    # Log pero continuar - la columna puede ya existir
-                    logger.debug(f"Column SQL result: {sql[:50]}... - {col_error}")
+                    logger.warning(f"  ⚠ {col_error}")
 
-            logger.info("Photo Guard columns verified/created successfully")
+            logger.info("=== PHOTO GUARD COLUMNS VERIFIED/CREATED SUCCESSFULLY ===")
             return True
     except Exception as e:
-        logger.error(f"Error ensuring Photo Guard columns: {e}")
+        logger.error(f"!!! ERROR ensuring Photo Guard columns: {type(e).__name__}: {e}", exc_info=True)
         return False
 
 
