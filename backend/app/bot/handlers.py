@@ -922,23 +922,45 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def start_bot():
     """Inicia el bot de Telegram."""
+    import asyncio
+    import httpx
+
     if not settings.TELEGRAM_BOT_TOKEN:
         logger.warning("TELEGRAM_BOT_TOKEN not configured, bot will not start")
         return None
 
     try:
+        # PASO 1: Limpiar cualquier webhook o conexión anterior
+        logger.info("Cleaning up previous bot connections...")
+        async with httpx.AsyncClient() as client:
+            # Eliminar webhook si existe
+            delete_webhook_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
+            response = await client.get(delete_webhook_url)
+            logger.info(f"Delete webhook response: {response.json()}")
+
+            # Esperar un momento para que Telegram libere la conexión
+            await asyncio.sleep(2)
+
+            # Forzar cierre de cualquier getUpdates pendiente
+            close_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/close"
+            try:
+                response = await client.get(close_url)
+                logger.info(f"Close bot response: {response.json()}")
+            except Exception as e:
+                logger.debug(f"Close response (expected): {e}")
+
+            await asyncio.sleep(3)
+
+        # PASO 2: Construir e iniciar el bot
         application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
         setup_handlers(application)
-
-        # Agregar manejador global de errores
         application.add_error_handler(error_handler)
 
-        # Iniciar polling con retry en caso de conflicto
         logger.info("Starting Telegram bot in polling mode...")
         await application.initialize()
         await application.start()
 
-        # Configuración de polling más robusta
+        # Configuración de polling
         await application.updater.start_polling(
             drop_pending_updates=True,
             allowed_updates=["message", "callback_query"],
@@ -953,9 +975,8 @@ async def start_bot():
 
     except Exception as e:
         logger.error(f"Failed to start bot: {type(e).__name__}: {e}")
-        # Si hay conflicto, esperar y reintentar
         if "Conflict" in str(e):
-            logger.warning("Bot conflict detected - another instance may be running")
+            logger.warning("Bot conflict detected - will retry after delay")
         return None
 
 
