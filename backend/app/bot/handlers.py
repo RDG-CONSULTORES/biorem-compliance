@@ -926,20 +926,37 @@ async def start_bot():
         logger.warning("TELEGRAM_BOT_TOKEN not configured, bot will not start")
         return None
 
-    application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
-    setup_handlers(application)
+    try:
+        application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
+        setup_handlers(application)
 
-    # Agregar manejador global de errores
-    application.add_error_handler(error_handler)
+        # Agregar manejador global de errores
+        application.add_error_handler(error_handler)
 
-    # Iniciar polling
-    logger.info("Starting Telegram bot in polling mode...")
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling(drop_pending_updates=True)
+        # Iniciar polling con retry en caso de conflicto
+        logger.info("Starting Telegram bot in polling mode...")
+        await application.initialize()
+        await application.start()
 
-    logger.info("Telegram bot started successfully!")
-    return application
+        # Configuración de polling más robusta
+        await application.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query"],
+            read_timeout=30,
+            write_timeout=30,
+            connect_timeout=30,
+            pool_timeout=30,
+        )
+
+        logger.info("Telegram bot started successfully!")
+        return application
+
+    except Exception as e:
+        logger.error(f"Failed to start bot: {type(e).__name__}: {e}")
+        # Si hay conflicto, esperar y reintentar
+        if "Conflict" in str(e):
+            logger.warning("Bot conflict detected - another instance may be running")
+        return None
 
 
 async def stop_bot(application: Application):
