@@ -205,13 +205,49 @@ def health_check():
 
 @app.get("/health/detailed")
 async def health_check_detailed():
-    """Endpoint de salud detallado."""
-    return {
+    """Endpoint de salud detallado con diagnóstico de DB y Bot."""
+    status = {
         "status": "healthy",
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
+        "database": "unknown",
+        "bot": "unknown",
+        "photo_guard_columns": []
     }
+
+    # Verificar base de datos y columnas
+    try:
+        async with async_engine.connect() as conn:
+            # Test básico de conexión
+            await conn.execute(text("SELECT 1"))
+            status["database"] = "connected"
+
+            # Verificar columnas de Photo Guard en contacts
+            result = await conn.execute(text("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'contacts'
+                AND column_name IN ('last_known_latitude', 'last_known_longitude', 'last_location_at')
+            """))
+            cols = [row[0] for row in result.fetchall()]
+            status["photo_guard_columns"] = cols
+
+            if len(cols) >= 3:
+                status["photo_guard"] = "OK"
+            else:
+                status["photo_guard"] = f"MISSING - only {len(cols)}/3 columns"
+
+    except Exception as e:
+        status["database"] = f"error: {str(e)}"
+        status["status"] = "degraded"
+
+    # Verificar si el bot está configurado
+    if settings.TELEGRAM_BOT_TOKEN:
+        status["bot"] = "configured"
+    else:
+        status["bot"] = "not configured"
+
+    return status
 
 
 # Root endpoint
