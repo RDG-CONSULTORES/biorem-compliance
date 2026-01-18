@@ -161,3 +161,31 @@ class LocationComplianceStatus(BaseModel):
     days_since_compliance: Optional[int]
     next_reminder_at: Optional[datetime]
     status: str  # "ok", "pending", "overdue", "critical"
+
+
+# ==================== VALIDATION STATS ====================
+
+class ComplianceValidationStats(BaseModel):
+    """
+    Estadísticas de validación de compliance.
+
+    Diseñado para mostrar el estado de las evidencias:
+    - Cuántas han sido validadas (por IA o manualmente)
+    - Cuántas están pendientes de revisión
+    - Cuántas fueron rechazadas
+    """
+    total: int = Field(..., description="Total de registros de compliance")
+    validated: int = Field(..., description="Validados (IA aprobó o validación manual positiva)")
+    pending_review: int = Field(..., description="Pendientes de revisión (sin validación final)")
+    rejected: int = Field(..., description="Rechazados (validación manual negativa)")
+
+    # Desglose adicional
+    validated_by_ai: int = Field(default=0, description="Validados automáticamente por IA")
+    validated_manually: int = Field(default=0, description="Validados manualmente por admin")
+
+    # Métricas de periodo
+    validated_this_month: int = Field(default=0, description="Validados este mes")
+    rejected_this_month: int = Field(default=0, description="Rechazados este mes")
+
+    # Tasa de aprobación
+    approval_rate: float = Field(default=0.0, description="Porcentaje de aprobación (0-100)")

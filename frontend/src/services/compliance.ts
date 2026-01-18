@@ -14,11 +14,23 @@ interface ComplianceListParams extends PaginationParams {
   date_to?: string
 }
 
+/**
+ * Estadísticas de validación de compliance.
+ * Coincide con ComplianceValidationStats del backend.
+ */
 export interface ComplianceStats {
   total: number
   validated: number
   pending_review: number
   rejected: number
+  // Desglose adicional
+  validated_by_ai: number
+  validated_manually: number
+  // Métricas del mes
+  validated_this_month: number
+  rejected_this_month: number
+  // Tasa de aprobación
+  approval_rate: number
 }
 
 export const complianceService = {
@@ -44,15 +56,11 @@ export const complianceService = {
   },
 
   /**
-   * Obtiene estadísticas de compliance del dashboard
+   * Obtiene estadísticas de validación de compliance.
+   * Usa el endpoint /api/compliance/validation-stats
    */
   async getStats(): Promise<ComplianceStats> {
-    try {
-      return await api.get<ComplianceStats>("/api/compliance/dashboard/stats")
-    } catch {
-      // If endpoint doesn't exist, return default stats
-      return { total: 0, validated: 0, pending_review: 0, rejected: 0 }
-    }
+    return api.get<ComplianceStats>("/api/compliance/validation-stats")
   },
 
   /**

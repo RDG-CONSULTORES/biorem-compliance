@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -35,6 +35,7 @@ import { Label } from "@/components/ui/label"
 import { Plus, Search, MessageCircle, Phone, Mail, Loader2, Users, Copy, Check, MoreHorizontal, Pencil, Trash2, Power, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { contactsService, clientsService } from "@/services"
+import { useDataFetch } from "@/hooks"
 import type { Contact, ContactCreate, ContactUpdate, Client, ContactWithInviteCode } from "@/types"
 
 const roleLabels: Record<string, string> = {
@@ -59,10 +60,23 @@ const roleOptions = [
 ]
 
 export default function ContactosPage() {
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [clients, setClients] = useState<Client[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Data fetching with unified hook (fixes double-flicker)
+  const { data, loading, refetch } = useDataFetch({
+    fetchFn: async () => {
+      const [contactsRes, clientsRes] = await Promise.all([
+        contactsService.list({ search: searchQuery || undefined, page_size: 100 }),
+        clientsService.list({ page_size: 100 }),
+      ])
+      return { contacts: contactsRes.items, clients: clientsRes.items }
+    },
+    deps: [searchQuery],
+    initialData: { contacts: [] as Contact[], clients: [] as Client[] },
+    onError: (err) => toast.error(err.message || "Error al cargar datos"),
+  })
+
+  const { contacts, clients } = data
 
   // Dialog states
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -82,32 +96,6 @@ export default function ContactosPage() {
     email: "",
     role: "operador",
   })
-
-  // Fetch data
-  const fetchData = async () => {
-    try {
-      setLoading(true)
-      const [contactsRes, clientsRes] = await Promise.all([
-        contactsService.list({ search: searchQuery || undefined, page_size: 100 }),
-        clientsService.list({ page_size: 100 }),
-      ])
-      setContacts(contactsRes.items)
-      setClients(clientsRes.items)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al cargar datos")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchData()
-  }, [])
-
-  useEffect(() => {
-    const timer = setTimeout(() => fetchData(), 300)
-    return () => clearTimeout(timer)
-  }, [searchQuery])
 
   // Get client name by ID
   const getClientName = (clientId: number) => {
@@ -151,7 +139,7 @@ export default function ContactosPage() {
         await contactsService.update(editingContact.id, updateData)
         toast.success("Contacto actualizado correctamente")
         setIsDialogOpen(false)
-        fetchData()
+        refetch()
       } else {
         const created = await contactsService.create(formData)
         setNewContact(created)
@@ -172,7 +160,7 @@ export default function ContactosPage() {
   const handleCloseInviteDialog = () => {
     setIsInviteDialogOpen(false)
     setNewContact(null)
-    fetchData()
+    refetch()
   }
 
   // Copy invite code
@@ -212,7 +200,7 @@ export default function ContactosPage() {
       toast.success("Contacto eliminado correctamente")
       setIsDeleteDialogOpen(false)
       setDeletingContact(null)
-      fetchData()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar contacto")
     }
@@ -223,7 +211,7 @@ export default function ContactosPage() {
     try {
       await contactsService.update(contact.id, { active: !contact.active })
       toast.success(contact.active ? "Contacto desactivado" : "Contacto activado")
-      fetchData()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al cambiar estado")
     }

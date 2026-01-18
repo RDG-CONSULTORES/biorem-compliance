@@ -41,7 +41,17 @@ export default function CompliancePage() {
   const [records, setRecords] = useState<ComplianceRecord[]>([])
   const [locations, setLocations] = useState<Location[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
-  const [stats, setStats] = useState<ComplianceStats>({ total: 0, validated: 0, pending_review: 0, rejected: 0 })
+  const [stats, setStats] = useState<ComplianceStats>({
+    total: 0,
+    validated: 0,
+    pending_review: 0,
+    rejected: 0,
+    validated_by_ai: 0,
+    validated_manually: 0,
+    validated_this_month: 0,
+    rejected_this_month: 0,
+    approval_rate: 0,
+  })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState("")
@@ -67,17 +77,46 @@ export default function CompliancePage() {
 
       // Calculate stats from records if API doesn't provide them
       if (statsRes.total === 0 && recordsRes.items.length > 0) {
+        const now = new Date()
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+
         const calculated = recordsRes.items.reduce(
           (acc, record) => {
             acc.total++
             const status = getValidationStatus(record)
-            if (status === "validated") acc.validated++
-            else if (status === "rejected") acc.rejected++
-            else acc.pending_review++
+            const isThisMonth = new Date(record.created_at) >= startOfMonth
+
+            if (status === "validated") {
+              acc.validated++
+              if (record.ai_validated && record.ai_confidence && record.ai_confidence >= 0.8) {
+                acc.validated_by_ai++
+              } else if (record.manual_validated) {
+                acc.validated_manually++
+              }
+              if (isThisMonth) acc.validated_this_month++
+            } else if (status === "rejected") {
+              acc.rejected++
+              if (isThisMonth) acc.rejected_this_month++
+            } else {
+              acc.pending_review++
+            }
             return acc
           },
-          { total: 0, validated: 0, pending_review: 0, rejected: 0 }
+          {
+            total: 0,
+            validated: 0,
+            pending_review: 0,
+            rejected: 0,
+            validated_by_ai: 0,
+            validated_manually: 0,
+            validated_this_month: 0,
+            rejected_this_month: 0,
+            approval_rate: 0,
+          }
         )
+        // Calculate approval rate
+        const reviewed = calculated.validated + calculated.rejected
+        calculated.approval_rate = reviewed > 0 ? (calculated.validated / reviewed) * 100 : 0
         setStats(calculated)
       } else {
         setStats(statsRes)
@@ -132,16 +171,21 @@ export default function CompliancePage() {
       )}
 
       {/* Stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Validados (IA)
+              Validados
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">{stats.validated}</div>
-            <p className="text-xs text-muted-foreground">Este mes</p>
+            <p className="text-xs text-muted-foreground">
+              {stats.validated_by_ai > 0 && `${stats.validated_by_ai} por IA`}
+              {stats.validated_by_ai > 0 && stats.validated_manually > 0 && " · "}
+              {stats.validated_manually > 0 && `${stats.validated_manually} manual`}
+              {stats.validated_by_ai === 0 && stats.validated_manually === 0 && "Total validados"}
+            </p>
           </CardContent>
         </Card>
         <Card>
@@ -163,7 +207,24 @@ export default function CompliancePage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-red-600">{stats.rejected}</div>
-            <p className="text-xs text-muted-foreground">Este mes</p>
+            <p className="text-xs text-muted-foreground">
+              {stats.rejected_this_month > 0 ? `${stats.rejected_this_month} este mes` : "Total rechazados"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Tasa Aprobación
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${stats.approval_rate >= 80 ? 'text-green-600' : stats.approval_rate >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+              {stats.approval_rate.toFixed(1)}%
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {stats.validated_this_month > 0 ? `+${stats.validated_this_month} este mes` : "Sin datos del mes"}
+            </p>
           </CardContent>
         </Card>
       </div>

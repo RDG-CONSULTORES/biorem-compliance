@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -40,9 +40,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Label } from "@/components/ui/label"
-import { Plus, Search, Building2, MapPin, Loader2, MoreHorizontal, Pencil, Trash2, Power, Users, Eye } from "lucide-react"
+import { Plus, Search, Building2, MapPin, Loader2, MoreHorizontal, Pencil, Trash2, Power, Eye } from "lucide-react"
 import { toast } from "sonner"
 import { clientsService } from "@/services"
+import { useListFetch } from "@/hooks"
 import type { Client, ClientCreate, ClientUpdate } from "@/types"
 
 const businessTypeLabels: Record<string, string> = {
@@ -67,9 +68,14 @@ const businessTypeOptions = [
 
 export default function ClientesPage() {
   const router = useRouter()
-  const [clients, setClients] = useState<Client[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Data fetching with unified hook (fixes double-flicker)
+  const { items: clients, loading, refetch } = useListFetch<Client>({
+    fetchFn: (params) => clientsService.list(params),
+    searchQuery,
+    onError: (err) => toast.error(err.message || "Error al cargar clientes"),
+  })
 
   // Dialog states
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -86,34 +92,6 @@ export default function ClientesPage() {
     email: "",
     business_type: "otro",
   })
-
-  // Fetch clients
-  const fetchClients = async () => {
-    try {
-      setLoading(true)
-      const response = await clientsService.list({
-        search: searchQuery || undefined,
-        page_size: 100,
-      })
-      setClients(response.items)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al cargar clientes")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchClients()
-  }, [])
-
-  // Search with debounce
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchClients()
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [searchQuery])
 
   // Open dialog for create
   const handleCreate = () => {
@@ -162,7 +140,7 @@ export default function ClientesPage() {
       setIsDialogOpen(false)
       setFormData({ name: "", city: "", phone: "", email: "", business_type: "otro" })
       setEditingClient(null)
-      fetchClients()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al guardar cliente")
     } finally {
@@ -185,7 +163,7 @@ export default function ClientesPage() {
       toast.success("Cliente eliminado correctamente")
       setIsDeleteDialogOpen(false)
       setDeletingClient(null)
-      fetchClients()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar cliente")
     }
@@ -196,7 +174,7 @@ export default function ClientesPage() {
     try {
       await clientsService.update(client.id, { active: !client.active })
       toast.success(client.active ? "Cliente desactivado" : "Cliente activado")
-      fetchClients()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al cambiar estado")
     }

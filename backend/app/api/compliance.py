@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 from app.schemas.compliance import (
     ComplianceResponse, ComplianceWithDetails, ComplianceList,
     ReminderResponse, ReminderList, ReminderCreate,
-    ManualValidationRequest, DashboardStats, LocationComplianceStatus
+    ManualValidationRequest, DashboardStats, LocationComplianceStatus,
+    ComplianceValidationStats
 )
 
 router = APIRouter()
@@ -514,3 +515,91 @@ async def get_locations_compliance_status(
         ))
 
     return statuses
+
+
+@router.get("/validation-stats", response_model=ComplianceValidationStats)
+async def get_validation_stats(
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Obtiene estadísticas de validación de registros de compliance.
+
+    Calcula:
+    - Total de registros
+    - Validados (por IA con alta confianza o validación manual positiva)
+    - Pendientes de revisión (sin validación final)
+    - Rechazados (validación manual negativa)
+    """
+    # Total de registros
+    total = (await db.execute(
+        select(func.count()).select_from(ComplianceRecord)
+    )).scalar() or 0
+
+    # Validados: is_valid=True (puede ser por IA o manual)
+    validated = (await db.execute(
+        select(func.count()).select_from(ComplianceRecord)
+        .where(ComplianceRecord.is_valid == True)
+    )).scalar() or 0
+
+    # Rechazados: is_valid=False (validación manual negativa)
+    rejected = (await db.execute(
+        select(func.count()).select_from(ComplianceRecord)
+        .where(ComplianceRecord.is_valid == False)
+    )).scalar() or 0
+
+    # Pendientes: is_valid IS NULL (sin validación final)
+    pending_review = (await db.execute(
+        select(func.count()).select_from(ComplianceRecord)
+        .where(ComplianceRecord.is_valid.is_(None))
+    )).scalar() or 0
+
+    # Desglose: validados por IA (alta confianza, sin validación manual)
+    validated_by_ai = (await db.execute(
+        select(func.count()).select_from(ComplianceRecord)
+        .where(and_(
+            ComplianceRecord.ai_validated == True,
+            ComplianceRecord.ai_confidence >= 0.8,
+            ComplianceRecord.manual_validated.is_(None)
+        ))
+    )).scalar() or 0
+
+    # Desglose: validados manualmente
+    validated_manually = (await db.execute(
+        select(func.count()).select_from(ComplianceRecord)
+        .where(ComplianceRecord.manual_validated == True)
+    )).scalar() or 0
+
+    # Este mes
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    validated_this_month = (await db.execute(
+        select(func.count()).select_from(ComplianceRecord)
+        .where(and_(
+            ComplianceRecord.is_valid == True,
+            ComplianceRecord.created_at >= month_start
+        ))
+    )).scalar() or 0
+
+    rejected_this_month = (await db.execute(
+        select(func.count()).select_from(ComplianceRecord)
+        .where(and_(
+            ComplianceRecord.is_valid == False,
+            ComplianceRecord.created_at >= month_start
+        ))
+    )).scalar() or 0
+
+    # Tasa de aprobación
+    decided = validated + rejected
+    approval_rate = (validated / decided * 100) if decided > 0 else 0.0
+
+    return ComplianceValidationStats(
+        total=total,
+        validated=validated,
+        pending_review=pending_review,
+        rejected=rejected,
+        validated_by_ai=validated_by_ai,
+        validated_manually=validated_manually,
+        validated_this_month=validated_this_month,
+        rejected_this_month=rejected_this_month,
+        approval_rate=round(approval_rate, 1)
+    )

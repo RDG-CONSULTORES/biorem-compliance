@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -48,6 +48,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { locationsService, clientsService, productsService, contactsService, complianceService } from "@/services"
+import { useDataFetch } from "@/hooks"
 import type { Location, LocationCreate, LocationUpdate, Client, Product, Contact } from "@/types"
 
 type ComplianceStatus = "ok" | "pending" | "overdue"
@@ -98,12 +99,35 @@ function getDaysLabel(daysString: string | null): string {
 }
 
 export default function UbicacionesPage() {
-  const [locations, setLocations] = useState<Location[]>([])
-  const [clients, setClients] = useState<Client[]>([])
-  const [products, setProducts] = useState<Product[]>([])
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Data fetching with unified hook (fixes double-flicker)
+  const { data, loading, refetch } = useDataFetch({
+    fetchFn: async () => {
+      const [locationsRes, clientsRes, productsRes, contactsRes] = await Promise.all([
+        locationsService.list({ search: searchQuery || undefined, page_size: 100 }),
+        clientsService.list({ page_size: 100 }),
+        productsService.list({ page_size: 100 }),
+        contactsService.list({ page_size: 100 }),
+      ])
+      return {
+        locations: locationsRes.items,
+        clients: clientsRes.items,
+        products: productsRes.items,
+        contacts: contactsRes.items.filter(c => c.telegram_id), // Only linked contacts
+      }
+    },
+    deps: [searchQuery],
+    initialData: {
+      locations: [] as Location[],
+      clients: [] as Client[],
+      products: [] as Product[],
+      contacts: [] as Contact[],
+    },
+    onError: (err) => toast.error(err.message || "Error al cargar datos"),
+  })
+
+  const { locations, clients, products, contacts } = data
 
   // Dialog states
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -130,36 +154,6 @@ export default function UbicacionesPage() {
     reminder_days: "1,2,3,4,5",
     selectedDays: ["1", "2", "3", "4", "5"],
   })
-
-  // Fetch data
-  const fetchData = async () => {
-    try {
-      setLoading(true)
-      const [locationsRes, clientsRes, productsRes, contactsRes] = await Promise.all([
-        locationsService.list({ search: searchQuery || undefined, page_size: 100 }),
-        clientsService.list({ page_size: 100 }),
-        productsService.list({ page_size: 100 }),
-        contactsService.list({ page_size: 100 }),
-      ])
-      setLocations(locationsRes.items)
-      setClients(clientsRes.items)
-      setProducts(productsRes.items)
-      setContacts(contactsRes.items.filter(c => c.telegram_id)) // Only linked contacts
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al cargar datos")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchData()
-  }, [])
-
-  useEffect(() => {
-    const timer = setTimeout(() => fetchData(), 300)
-    return () => clearTimeout(timer)
-  }, [searchQuery])
 
   // Open dialog for create
   const handleCreate = () => {
@@ -235,7 +229,7 @@ export default function UbicacionesPage() {
 
       setIsDialogOpen(false)
       setEditingLocation(null)
-      fetchData()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al guardar ubicación")
     } finally {
@@ -258,7 +252,7 @@ export default function UbicacionesPage() {
       toast.success("Ubicación eliminada correctamente")
       setIsDeleteDialogOpen(false)
       setDeletingLocation(null)
-      fetchData()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar ubicación")
     }
@@ -269,7 +263,7 @@ export default function UbicacionesPage() {
     try {
       await locationsService.update(location.id, { active: !location.active })
       toast.success(location.active ? "Ubicación desactivada" : "Ubicación activada")
-      fetchData()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al cambiar estado")
     }

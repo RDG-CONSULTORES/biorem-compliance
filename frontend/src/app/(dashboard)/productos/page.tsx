@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -44,12 +44,18 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { productsService } from "@/services"
+import { useListFetch } from "@/hooks"
 import type { Product, ProductCreate, ProductUpdate } from "@/types"
 
 export default function ProductosPage() {
-  const [products, setProducts] = useState<Product[]>([])
-  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
+
+  // Data fetching with unified hook (fixes double-flicker)
+  const { items: products, loading, refetch } = useListFetch<Product>({
+    fetchFn: (params) => productsService.list(params),
+    searchQuery,
+    onError: (err) => toast.error(err.message || "Error al cargar productos"),
+  })
 
   // Dialog states
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -68,28 +74,6 @@ export default function ProductosPage() {
     frequency_recommended: 7,
     category: "",
   })
-
-  // Fetch data
-  const fetchData = async () => {
-    try {
-      setLoading(true)
-      const response = await productsService.list({ search: searchQuery || undefined, page_size: 100 })
-      setProducts(response.items)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Error al cargar productos")
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchData()
-  }, [])
-
-  useEffect(() => {
-    const timer = setTimeout(() => fetchData(), 300)
-    return () => clearTimeout(timer)
-  }, [searchQuery])
 
   // Open dialog for create
   const handleCreate = () => {
@@ -147,7 +131,7 @@ export default function ProductosPage() {
 
       setIsDialogOpen(false)
       setEditingProduct(null)
-      fetchData()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al guardar producto")
     } finally {
@@ -170,7 +154,7 @@ export default function ProductosPage() {
       toast.success("Producto eliminado correctamente")
       setIsDeleteDialogOpen(false)
       setDeletingProduct(null)
-      fetchData()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al eliminar producto")
     }
@@ -181,7 +165,7 @@ export default function ProductosPage() {
     try {
       await productsService.update(product.id, { active: !product.active })
       toast.success(product.active ? "Producto desactivado" : "Producto activado")
-      fetchData()
+      refetch()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Error al cambiar estado")
     }
