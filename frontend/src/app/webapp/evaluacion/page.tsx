@@ -241,14 +241,27 @@ export default function EvaluacionPage() {
     };
 
     const tryInit = () => {
-      // Inicializar Telegram
-      const tg = getTelegramWebApp();
+      // Debug: Check what's available
+      const hasTelegram = typeof window !== "undefined" && !!window.Telegram;
+      const hasWebApp = hasTelegram && !!window.Telegram?.WebApp;
+      const tg = hasWebApp ? window.Telegram!.WebApp : null;
+
+      console.log("[TG Debug Eval] Attempt:", attempts);
+      console.log("[TG Debug Eval] window.Telegram exists:", hasTelegram);
+      console.log("[TG Debug Eval] window.Telegram.WebApp exists:", hasWebApp);
+
       if (tg) {
+        console.log("[TG Debug Eval] initData:", tg.initData ? "present (" + tg.initData.length + " chars)" : "empty");
+        console.log("[TG Debug Eval] initDataUnsafe:", JSON.stringify(tg.initDataUnsafe));
+        console.log("[TG Debug Eval] initDataUnsafe.user:", JSON.stringify(tg.initDataUnsafe?.user));
+
         tg.ready();
         tg.expand();
       }
 
       const telegramId = getTelegramUserId();
+      console.log("[TG Debug Eval] getTelegramUserId():", telegramId);
+
       if (telegramId) {
         loadUserContext(telegramId);
         return true;
@@ -265,7 +278,12 @@ export default function EvaluacionPage() {
           clearInterval(interval);
         } else if (attempts >= maxAttempts) {
           clearInterval(interval);
-          setInitError("No se pudo obtener tu ID de Telegram. Asegúrate de abrir esta app desde el bot de Telegram.");
+          // Show debug info in error
+          const tg = window.Telegram?.WebApp;
+          const debugInfo = tg
+            ? `initData: ${tg.initData ? "present" : "empty"}, user: ${JSON.stringify(tg.initDataUnsafe?.user)}`
+            : "WebApp SDK not loaded";
+          setInitError(`No se pudo obtener tu ID de Telegram. Debug: ${debugInfo}`);
         }
       }, 100);
 
