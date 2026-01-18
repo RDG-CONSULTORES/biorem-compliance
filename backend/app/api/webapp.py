@@ -281,7 +281,8 @@ async def get_user_context(
                     "name": p.name,
                     "description": p.description,
                     "sku": p.sku,
-                    "unit": p.unit,
+                    "dosage": p.dosage,
+                    "category": p.category,
                 }
                 for p in products
             ]
