@@ -98,14 +98,14 @@ export const ordersService = {
    * Crea un nuevo pedido desde WebApp
    */
   async create(data: OrderCreate): Promise<Order> {
-    return api.post<Order>("/api/orders", data)
+    return api.post<Order>("/api/orders/", data)
   },
 
   /**
    * Lista pedidos con filtros y paginación
    */
   async list(params: OrderListParams = {}): Promise<OrderList> {
-    return api.get<OrderList>("/api/orders", { params })
+    return api.get<OrderList>("/api/orders/", { params })
   },
 
   /**
