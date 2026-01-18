@@ -46,7 +46,7 @@ class ProductOrder(Base):
 
     # Estado
     status = Column(
-        SQLEnum(OrderStatus, name="order_status", create_type=False),
+        SQLEnum(OrderStatus, name="order_status", create_constraint=False, native_enum=False),
         default=OrderStatus.PENDING,
         nullable=False
     )

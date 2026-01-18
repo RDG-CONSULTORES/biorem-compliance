@@ -100,6 +100,69 @@ async def ensure_photo_guard_columns():
         return False
 
 
+async def ensure_product_orders_table():
+    """
+    Asegura que la tabla product_orders exista en la base de datos.
+
+    Crea la tabla directamente si no existe, sin depender de Alembic.
+    """
+    logger.info("=== VERIFICANDO TABLA PRODUCT_ORDERS ===")
+
+    try:
+        async with async_engine.begin() as conn:
+            # Verificar si la tabla existe
+            result = await conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'product_orders'
+                )
+            """))
+            exists = result.scalar()
+
+            if exists:
+                logger.info("Tabla product_orders ya existe")
+                return True
+
+            logger.info("Creando tabla product_orders...")
+
+            # Crear la tabla
+            await conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS product_orders (
+                    id SERIAL PRIMARY KEY,
+                    location_id INTEGER NOT NULL REFERENCES locations(id),
+                    contact_id INTEGER NOT NULL REFERENCES contacts(id),
+                    items JSONB NOT NULL,
+                    notes TEXT,
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    signature_data TEXT,
+                    signed_by_name VARCHAR(100) NOT NULL,
+                    signed_at TIMESTAMP NOT NULL,
+                    signature_latitude DOUBLE PRECISION,
+                    signature_longitude DOUBLE PRECISION,
+                    reviewed_by_id INTEGER REFERENCES contacts(id),
+                    reviewed_at TIMESTAMP,
+                    rejection_reason TEXT,
+                    admin_notes TEXT,
+                    telegram_user_id VARCHAR(50),
+                    created_at TIMESTAMP DEFAULT NOW(),
+                    updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """))
+
+            # Crear índices
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_product_orders_location_id ON product_orders(location_id)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_product_orders_contact_id ON product_orders(contact_id)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_product_orders_status ON product_orders(status)"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_product_orders_created_at ON product_orders(created_at)"))
+
+            logger.info("=== TABLA PRODUCT_ORDERS CREADA EXITOSAMENTE ===")
+            return True
+
+    except Exception as e:
+        logger.error(f"!!! ERROR ensuring product_orders table: {type(e).__name__}: {e}", exc_info=True)
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Maneja el ciclo de vida de la aplicación."""
@@ -133,6 +196,9 @@ async def lifespan(app: FastAPI):
         # IMPORTANTE: Asegurar que las columnas de Photo Guard existan
         # Esto es necesario porque create_all no agrega columnas a tablas existentes
         await ensure_photo_guard_columns()
+
+        # Asegurar que la tabla product_orders exista
+        await ensure_product_orders_table()
 
         # Iniciar bot de Telegram con delay para evitar conflictos
         if settings.TELEGRAM_BOT_TOKEN:
