@@ -80,7 +80,7 @@ class ComplianceResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    location_id: int
+    location_id: Optional[int]  # Puede ser null para fotos sin recordatorio
     contact_id: Optional[int]
     reminder_id: Optional[int]
 
@@ -96,7 +96,7 @@ class ComplianceResponse(BaseModel):
     ai_validated: Optional[bool]
     ai_confidence: Optional[float]
     ai_summary: Optional[str]
-    ai_issues: Optional[list[str]]
+    ai_issues: Optional[list[Any]] = None  # Más flexible para JSONB
     ai_validated_at: Optional[datetime]
 
     # Validación manual
@@ -111,7 +111,7 @@ class ComplianceResponse(BaseModel):
     contact_notes: Optional[str]
 
     created_at: datetime
-    updated_at: datetime
+    updated_at: Optional[datetime] = None  # Puede ser null en registros antiguos
 
 
 class ComplianceWithDetails(ComplianceResponse):
