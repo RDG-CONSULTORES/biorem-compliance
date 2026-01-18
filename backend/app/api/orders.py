@@ -25,7 +25,7 @@ from app.services.order_notifications import (
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/orders", tags=["orders"])
+router = APIRouter()
 
 
 # ==================== CREAR PEDIDO ====================
