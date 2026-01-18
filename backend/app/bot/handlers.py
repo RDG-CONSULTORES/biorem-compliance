@@ -329,10 +329,14 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"=== UBICACIÓN RECIBIDA de user_id={user.id} ===")
     logger.info(f"Lat: {location.latitude}, Lon: {location.longitude}")
 
+    # Respuesta inmediata para evitar timeout
+    await update.message.reply_text("📍 Procesando ubicación...")
+
     try:
         async with AsyncSessionLocal() as db:
             logger.info("Conexión a DB establecida")
 
+            # Buscar contacto
             contact = await get_contact_by_telegram_id(telegram_id, db)
             logger.info(f"Contact encontrado: {contact is not None}, id={contact.id if contact else None}")
 
@@ -340,18 +344,30 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 logger.warning(f"Usuario {telegram_id} no vinculado")
                 await update.message.reply_text(
                     "No tienes una cuenta vinculada.\n"
-                    "Usa /start para vincular tu cuenta."
+                    "Usa /start para vincular tu cuenta.",
+                    reply_markup=get_main_keyboard()
                 )
                 return
 
-            # Guardar ubicación del contacto
-            logger.info("Guardando ubicación en contacto...")
-            contact.last_known_latitude = location.latitude
-            contact.last_known_longitude = location.longitude
-            contact.last_location_at = datetime.utcnow()
-            if hasattr(location, 'horizontal_accuracy') and location.horizontal_accuracy:
-                contact.last_location_accuracy = location.horizontal_accuracy
-            contact.last_interaction_at = datetime.utcnow()
+            # Guardar ubicación usando SQL directo para evitar problemas de ORM
+            logger.info("Guardando ubicación con SQL directo...")
+            from sqlalchemy import text
+            await db.execute(
+                text("""
+                    UPDATE contacts
+                    SET last_known_latitude = :lat,
+                        last_known_longitude = :lon,
+                        last_location_at = :now,
+                        last_interaction_at = :now
+                    WHERE telegram_id = :telegram_id
+                """),
+                {
+                    "lat": location.latitude,
+                    "lon": location.longitude,
+                    "now": datetime.utcnow(),
+                    "telegram_id": telegram_id
+                }
+            )
 
             logger.info("Haciendo commit a DB...")
             await db.commit()
@@ -378,9 +394,8 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 logger.info("Enviando confirmación (ubicación general)")
                 await update.message.reply_text(
-                    "📍 Ubicación registrada.\n\n"
-                    "Tu ubicación ha sido guardada. Cuando envíes una foto, "
-                    "se verificará que estés en la ubicación correcta.",
+                    "✅ Ubicación guardada.\n\n"
+                    "Cuando envíes una foto, se verificará que estés en el lugar correcto.",
                     reply_markup=get_main_keyboard()
                 )
 
@@ -390,7 +405,7 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"!!! ERROR en handle_location: {type(e).__name__}: {e}", exc_info=True)
         try:
             await update.message.reply_text(
-                "Hubo un error al procesar tu ubicación.\n"
+                f"Error: {type(e).__name__}\n"
                 "Por favor intenta de nuevo.",
                 reply_markup=get_main_keyboard()
             )
