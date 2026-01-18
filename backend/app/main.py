@@ -215,6 +215,8 @@ def health_check():
 @app.get("/health/detailed")
 async def health_check_detailed():
     """Endpoint de salud detallado con diagnóstico de DB y Bot."""
+    import httpx
+
     status = {
         "status": "healthy",
         "app": settings.APP_NAME,
@@ -222,17 +224,18 @@ async def health_check_detailed():
         "environment": settings.ENVIRONMENT,
         "database": "unknown",
         "bot": "unknown",
+        "bot_app_initialized": _telegram_app is not None,
+        "webhook_url_configured": settings.TELEGRAM_WEBHOOK_URL if hasattr(settings, 'TELEGRAM_WEBHOOK_URL') and settings.TELEGRAM_WEBHOOK_URL else None,
+        "telegram_webhook_info": None,
         "photo_guard_columns": []
     }
 
     # Verificar base de datos y columnas
     try:
         async with async_engine.connect() as conn:
-            # Test básico de conexión
             await conn.execute(text("SELECT 1"))
             status["database"] = "connected"
 
-            # Verificar columnas de Photo Guard en contacts
             result = await conn.execute(text("""
                 SELECT column_name FROM information_schema.columns
                 WHERE table_name = 'contacts'
@@ -240,19 +243,35 @@ async def health_check_detailed():
             """))
             cols = [row[0] for row in result.fetchall()]
             status["photo_guard_columns"] = cols
-
-            if len(cols) >= 3:
-                status["photo_guard"] = "OK"
-            else:
-                status["photo_guard"] = f"MISSING - only {len(cols)}/3 columns"
+            status["photo_guard"] = "OK" if len(cols) >= 3 else f"MISSING - only {len(cols)}/3"
 
     except Exception as e:
         status["database"] = f"error: {str(e)}"
         status["status"] = "degraded"
 
-    # Verificar si el bot está configurado
+    # Verificar configuración del bot
     if settings.TELEGRAM_BOT_TOKEN:
         status["bot"] = "configured"
+
+        # Consultar a Telegram el estado del webhook
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/getWebhookInfo",
+                    timeout=5
+                )
+                webhook_info = response.json()
+                if webhook_info.get("ok"):
+                    info = webhook_info.get("result", {})
+                    status["telegram_webhook_info"] = {
+                        "url": info.get("url", ""),
+                        "has_custom_certificate": info.get("has_custom_certificate", False),
+                        "pending_update_count": info.get("pending_update_count", 0),
+                        "last_error_date": info.get("last_error_date"),
+                        "last_error_message": info.get("last_error_message"),
+                    }
+        except Exception as e:
+            status["telegram_webhook_info"] = f"error: {str(e)}"
     else:
         status["bot"] = "not configured"
 
