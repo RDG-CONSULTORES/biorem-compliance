@@ -116,7 +116,8 @@ async def lifespan(app: FastAPI):
             # Importar modelos para que Alembic los conozca
             from app.models import (
                 Client, Location, Contact, Product,
-                ScheduledReminder, ComplianceRecord, NotificationLog
+                ScheduledReminder, ComplianceRecord, NotificationLog,
+                EvaluationTemplate, SelfEvaluation
             )
             run_migrations()
         except Exception as e:
@@ -359,7 +360,8 @@ from app.api import (
     contacts_router,
     compliance_router,
     reports_router,
-    webapp_router
+    webapp_router,
+    evaluations_router
 )
 
 app.include_router(clients_router, prefix="/api/clients", tags=["Clientes"])
@@ -369,3 +371,4 @@ app.include_router(contacts_router, prefix="/api/contacts", tags=["Contactos"])
 app.include_router(compliance_router, prefix="/api/compliance", tags=["Compliance"])
 app.include_router(reports_router, prefix="/api/reports", tags=["Reportes"])
 app.include_router(webapp_router, prefix="/api/webapp", tags=["WebApp"])
+app.include_router(evaluations_router, prefix="/api/evaluations", tags=["Evaluaciones"])
