@@ -195,72 +195,109 @@ async def get_user_context(
     - Ubicaciones disponibles
     - Productos disponibles
     """
-    # Buscar contacto por telegram_id
-    result = await db.execute(
-        select(Contact)
-        .options(selectinload(Contact.client))
-        .where(Contact.telegram_id == telegram_id)
-    )
-    contact = result.scalar_one_or_none()
-
-    if not contact:
-        raise HTTPException(
-            status_code=404,
-            detail="Usuario no vinculado. Usa /start en el bot primero."
+    try:
+        # Buscar contacto por telegram_id
+        logger.info(f"[user-context] Looking up telegram_id: {telegram_id}")
+        result = await db.execute(
+            select(Contact)
+            .options(selectinload(Contact.client))
+            .where(Contact.telegram_id == telegram_id)
         )
+        contact = result.scalar_one_or_none()
 
-    if not contact.client:
-        raise HTTPException(
-            status_code=404,
-            detail="Contacto sin cliente asociado"
-        )
-
-    # Obtener ubicaciones del cliente
-    result = await db.execute(
-        select(Location)
-        .options(selectinload(Location.product))
-        .where(
-            Location.client_id == contact.client_id,
-            Location.active == True
-        )
-    )
-    locations = result.scalars().all()
-
-    # Obtener productos disponibles
-    result = await db.execute(
-        select(Product).where(Product.active == True)
-    )
-    products = result.scalars().all()
-
-    return UserContext(
-        contact_id=contact.id,
-        name=contact.name,
-        role=contact.role.value if contact.role else "operator",
-        client_id=contact.client_id,
-        client_name=contact.client.company_name,
-        locations=[
-            LocationContext(
-                id=loc.id,
-                name=loc.name,
-                address=loc.address,
-                latitude=loc.latitude,
-                longitude=loc.longitude,
-                product_id=loc.product_id,
-                product_name=loc.product.name if loc.product else None
+        if not contact:
+            logger.warning(f"[user-context] Contact not found for telegram_id: {telegram_id}")
+            raise HTTPException(
+                status_code=404,
+                detail="Usuario no vinculado. Usa /start en el bot primero."
             )
-            for loc in locations
-        ],
-        products=[
-            {
-                "id": p.id,
-                "name": p.name,
-                "description": p.description,
-                "sku": p.sku,
-                "unit": p.unit,
-            }
-            for p in products
-        ]
-    )
+
+        logger.info(f"[user-context] Found contact: {contact.id} - {contact.name}")
+
+        if not contact.client_id:
+            logger.warning(f"[user-context] Contact {contact.id} has no client_id")
+            raise HTTPException(
+                status_code=404,
+                detail="Contacto sin cliente asociado"
+            )
+
+        if not contact.client:
+            logger.warning(f"[user-context] Contact {contact.id} client relationship not loaded")
+            raise HTTPException(
+                status_code=404,
+                detail="Contacto sin cliente asociado"
+            )
+
+        logger.info(f"[user-context] Client: {contact.client_id} - {contact.client.company_name}")
+
+        # Obtener ubicaciones del cliente
+        result = await db.execute(
+            select(Location)
+            .options(selectinload(Location.product))
+            .where(
+                Location.client_id == contact.client_id,
+                Location.active == True
+            )
+        )
+        locations = result.scalars().all()
+        logger.info(f"[user-context] Found {len(locations)} locations")
+
+        # Obtener productos disponibles
+        result = await db.execute(
+            select(Product).where(Product.active == True)
+        )
+        products = result.scalars().all()
+        logger.info(f"[user-context] Found {len(products)} products")
+
+        # Determinar el rol de forma segura
+        role_value = "operator"
+        if contact.role:
+            try:
+                role_value = contact.role.value if hasattr(contact.role, 'value') else str(contact.role)
+            except Exception as e:
+                logger.warning(f"[user-context] Error getting role value: {e}")
+
+        response = UserContext(
+            contact_id=contact.id,
+            name=contact.name,
+            role=role_value,
+            client_id=contact.client_id,
+            client_name=contact.client.company_name,
+            locations=[
+                LocationContext(
+                    id=loc.id,
+                    name=loc.name,
+                    address=loc.address,
+                    latitude=loc.latitude,
+                    longitude=loc.longitude,
+                    product_id=loc.product_id,
+                    product_name=loc.product.name if loc.product else None
+                )
+                for loc in locations
+            ],
+            products=[
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "description": p.description,
+                    "sku": p.sku,
+                    "unit": p.unit,
+                }
+                for p in products
+            ]
+        )
+
+        logger.info(f"[user-context] Successfully built response for {contact.name}")
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[user-context] Unexpected error for telegram_id {telegram_id}: {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno: {type(e).__name__}: {str(e)}"
+        )
 
 
 @router.get("/health")
