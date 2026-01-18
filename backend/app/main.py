@@ -100,6 +100,34 @@ async def ensure_photo_guard_columns():
         return False
 
 
+async def ensure_self_evaluations_columns():
+    """
+    Asegura que la tabla self_evaluations tenga todas las columnas necesarias.
+    """
+    columns_sql = [
+        "ALTER TABLE self_evaluations ADD COLUMN IF NOT EXISTS user_agent VARCHAR(255)",
+        "ALTER TABLE self_evaluations ADD COLUMN IF NOT EXISTS ip_address VARCHAR(45)",
+        "ALTER TABLE self_evaluations ADD COLUMN IF NOT EXISTS area_scores JSONB",
+    ]
+
+    logger.info("=== VERIFICANDO COLUMNAS DE SELF_EVALUATIONS ===")
+
+    try:
+        async with async_engine.begin() as conn:
+            for sql in columns_sql:
+                try:
+                    await conn.execute(text(sql))
+                    logger.info(f"  ✓ {sql}")
+                except Exception as col_error:
+                    logger.warning(f"  ⚠ {col_error}")
+
+            logger.info("=== SELF_EVALUATIONS COLUMNS VERIFIED ===")
+            return True
+    except Exception as e:
+        logger.error(f"!!! ERROR ensuring self_evaluations columns: {type(e).__name__}: {e}", exc_info=True)
+        return False
+
+
 async def ensure_product_orders_table():
     """
     Asegura que la tabla product_orders exista en la base de datos.
@@ -199,6 +227,9 @@ async def lifespan(app: FastAPI):
 
         # Asegurar que la tabla product_orders exista
         await ensure_product_orders_table()
+
+        # Asegurar que self_evaluations tenga todas las columnas
+        await ensure_self_evaluations_columns()
 
         # Iniciar bot de Telegram con delay para evitar conflictos
         if settings.TELEGRAM_BOT_TOKEN:
