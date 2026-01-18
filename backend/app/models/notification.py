@@ -17,6 +17,10 @@ class NotificationType(str, enum.Enum):
     LINK_CODE = "link_code"  # Código de vinculación
     ADMIN_ALERT = "admin_alert"  # Alerta para administrador
     SYSTEM = "system"  # Mensaje del sistema
+    ORDER_NEW = "order_new"  # Nuevo pedido creado
+    ORDER_APPROVED = "order_approved"  # Pedido aprobado
+    ORDER_REJECTED = "order_rejected"  # Pedido rechazado
+    ORDER_STATUS = "order_status"  # Cambio de estado de pedido
 
 
 class NotificationLog(Base):

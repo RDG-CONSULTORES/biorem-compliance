@@ -9,6 +9,7 @@ from app.models.reminder import ScheduledReminder, ReminderStatus
 from app.models.compliance import ComplianceRecord
 from app.models.notification import NotificationLog, NotificationType
 from app.models.evaluation import EvaluationTemplate, SelfEvaluation
+from app.models.product_order import ProductOrder, OrderStatus
 
 __all__ = [
     # Modelos principales
@@ -21,9 +22,11 @@ __all__ = [
     "NotificationLog",
     "EvaluationTemplate",
     "SelfEvaluation",
+    "ProductOrder",
     # Enums
     "BusinessType",
     "ContactRole",
     "ReminderStatus",
     "NotificationType",
+    "OrderStatus",
 ]

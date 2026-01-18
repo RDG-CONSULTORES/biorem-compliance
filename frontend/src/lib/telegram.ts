@@ -213,6 +213,19 @@ export function hideMainButton(): void {
 }
 
 /**
+ * Muestra el botón principal (sin configurar click handler)
+ */
+export function showMainButton(text?: string): void {
+  const tg = getTelegramWebApp();
+  if (!tg) return;
+
+  if (text) {
+    tg.MainButton.setText(text);
+  }
+  tg.MainButton.show();
+}
+
+/**
  * Configura el botón de retroceso
  */
 export function setupBackButton(onClick: () => void): void {

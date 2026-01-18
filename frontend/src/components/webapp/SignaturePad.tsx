@@ -10,6 +10,8 @@ interface SignaturePadProps {
   width?: number;
   height?: number;
   className?: string;
+  /** Si es true, el contenedor usa altura fija y previene scroll */
+  preventScroll?: boolean;
 }
 
 export function SignaturePad({
@@ -18,8 +20,10 @@ export function SignaturePad({
   width = 350,
   height = 150,
   className = "",
+  preventScroll = true,
 }: SignaturePadProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isEmpty, setIsEmpty] = useState(true);
   const [ctx, setCtx] = useState<CanvasRenderingContext2D | null>(null);
@@ -52,6 +56,39 @@ export function SignaturePad({
 
     setCtx(context);
   }, [width, height]);
+
+  // Prevenir scroll en Telegram WebApp cuando se está en el área de firma
+  useEffect(() => {
+    if (!preventScroll) return;
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    const preventTouchScroll = (e: TouchEvent) => {
+      // Prevenir scroll solo si el touch está dentro del canvas
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const touch = e.touches[0];
+
+      if (
+        touch.clientX >= rect.left &&
+        touch.clientX <= rect.right &&
+        touch.clientY >= rect.top &&
+        touch.clientY <= rect.bottom
+      ) {
+        e.preventDefault();
+      }
+    };
+
+    // Agregar listener con passive: false para poder preventDefault
+    container.addEventListener("touchmove", preventTouchScroll, { passive: false });
+
+    return () => {
+      container.removeEventListener("touchmove", preventTouchScroll);
+    };
+  }, [preventScroll]);
 
   // Obtener posición del toque/mouse
   const getPosition = useCallback(
@@ -131,7 +168,11 @@ export function SignaturePad({
   }, [ctx, width, height, onSignatureChange]);
 
   return (
-    <div className={`signature-container ${className}`}>
+    <div
+      ref={containerRef}
+      className={`signature-container ${className}`}
+      style={{ touchAction: preventScroll ? "none" : "auto" }}
+    >
       <div className="mb-2">
         <p className="text-sm font-medium">
           Firma de: <span className="font-semibold">{signerName}</span>
@@ -141,10 +182,14 @@ export function SignaturePad({
         </p>
       </div>
 
-      <div className="relative border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-white">
+      <div
+        className="relative border-2 border-dashed border-gray-300 rounded-lg overflow-hidden bg-white"
+        style={{ touchAction: "none" }}
+      >
         <canvas
           ref={canvasRef}
           className="touch-none cursor-crosshair"
+          style={{ touchAction: "none" }}
           onMouseDown={startDrawing}
           onMouseMove={draw}
           onMouseUp={stopDrawing}

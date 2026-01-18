@@ -361,7 +361,8 @@ from app.api import (
     compliance_router,
     reports_router,
     webapp_router,
-    evaluations_router
+    evaluations_router,
+    orders_router
 )
 
 app.include_router(clients_router, prefix="/api/clients", tags=["Clientes"])
@@ -372,3 +373,4 @@ app.include_router(compliance_router, prefix="/api/compliance", tags=["Complianc
 app.include_router(reports_router, prefix="/api/reports", tags=["Reportes"])
 app.include_router(webapp_router, prefix="/api/webapp", tags=["WebApp"])
 app.include_router(evaluations_router, prefix="/api/evaluations", tags=["Evaluaciones"])
+app.include_router(orders_router, prefix="/api/orders", tags=["Pedidos"])

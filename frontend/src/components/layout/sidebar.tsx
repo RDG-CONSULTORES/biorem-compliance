@@ -13,6 +13,7 @@ import {
   BarChart3,
   Settings,
   LogOut,
+  ShoppingCart,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -25,6 +26,7 @@ const navigation = [
   { name: "Ubicaciones", href: "/ubicaciones", icon: MapPin },
   { name: "Productos", href: "/productos", icon: Package },
   { name: "Compliance", href: "/compliance", icon: ClipboardCheck },
+  { name: "Pedidos", href: "/pedidos", icon: ShoppingCart },
   { name: "Reportes", href: "/reports", icon: BarChart3 },
 ]
 

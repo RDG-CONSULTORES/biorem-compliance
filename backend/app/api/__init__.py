@@ -8,6 +8,7 @@ from app.api.compliance import router as compliance_router
 from app.api.reports import router as reports_router
 from app.api.webapp import router as webapp_router
 from app.api.evaluations import router as evaluations_router
+from app.api.orders import router as orders_router
 
 __all__ = [
     "clients_router",
@@ -18,4 +19,5 @@ __all__ = [
     "reports_router",
     "webapp_router",
     "evaluations_router",
+    "orders_router",
 ]
