@@ -28,7 +28,7 @@ import {
   hapticFeedback,
 } from "@/lib/telegram";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://resilient-strength-production-6673.up.railway.app";
 
 // ==================== TYPES ====================
 
