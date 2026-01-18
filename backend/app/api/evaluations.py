@@ -209,6 +209,16 @@ async def create_evaluation(
 
         # Crear evaluación
         now = datetime.utcnow()
+
+        # Convertir started_at a naive datetime (sin timezone) si viene con timezone
+        started_at_naive = None
+        if data.started_at:
+            if data.started_at.tzinfo is not None:
+                # Convertir a UTC y quitar timezone
+                started_at_naive = data.started_at.replace(tzinfo=None)
+            else:
+                started_at_naive = data.started_at
+
         evaluation = SelfEvaluation(
             template_id=data.template_id,
             location_id=data.location_id,
@@ -221,7 +231,7 @@ async def create_evaluation(
             signature_latitude=data.signature_latitude,
             signature_longitude=data.signature_longitude,
             telegram_user_id=data.telegram_user_id,
-            started_at=data.started_at,
+            started_at=started_at_naive,
             completed_at=now,
             # Valores temporales - se calcularán abajo
             total_score=0,
