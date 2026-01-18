@@ -6,13 +6,14 @@ Incluye Photo Guard para verificación de autenticidad.
 """
 import logging
 from datetime import datetime
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, WebAppInfo
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
     MessageHandler,
     ConversationHandler,
     ContextTypes,
+    CallbackQueryHandler,
     filters
 )
 from sqlalchemy import select
@@ -68,26 +69,19 @@ def get_main_keyboard(has_pending: bool = False) -> ReplyKeyboardMarkup:
 
     Args:
         has_pending: Si hay recordatorios pendientes (muestra indicador)
+
+    NOTA: Los botones de WebApp (Autoevaluación, Pedir Producto) son botones
+    de texto normales que luego envían un InlineKeyboard con el botón web_app.
+    Esto es necesario porque KeyboardButton con web_app NO pasa initData,
+    pero InlineKeyboardButton con web_app SÍ lo pasa.
     """
     photo_text = "📸 Enviar Foto" + (" 🔴" if has_pending else "")
-
-    # URL base de la Web App
-    webapp_url = settings.WEBAPP_URL
 
     keyboard = [
         # Fila 1: Acciones principales
         [KeyboardButton(photo_text), KeyboardButton("📊 Mi Estado")],
-        # Fila 2: Web Apps
-        [
-            KeyboardButton(
-                "📝 Autoevaluación",
-                web_app=WebAppInfo(url=f"{webapp_url}/evaluacion")
-            ),
-            KeyboardButton(
-                "🛒 Pedir Producto",
-                web_app=WebAppInfo(url=f"{webapp_url}/pedido")
-            )
-        ],
+        # Fila 2: Web Apps (botones de texto que abren inline keyboards)
+        [KeyboardButton("📝 Autoevaluación"), KeyboardButton("🛒 Pedir Producto")],
         # Fila 3: Ubicación y utilidades
         [KeyboardButton("📍 Compartir Ubicación", request_location=True)],
         [KeyboardButton("🌀 Menú"), KeyboardButton("❓ Ayuda")]
@@ -109,6 +103,34 @@ def get_location_request_keyboard() -> ReplyKeyboardMarkup:
         [KeyboardButton("❌ Cancelar")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+
+
+def get_webapp_inline_keyboard(webapp_type: str) -> InlineKeyboardMarkup:
+    """
+    Genera un InlineKeyboard con botón WebApp.
+
+    IMPORTANTE: InlineKeyboardButton con web_app SÍ pasa initData con user info,
+    a diferencia de KeyboardButton con web_app que NO lo pasa.
+
+    Args:
+        webapp_type: "evaluacion" o "pedido"
+    """
+    webapp_url = settings.WEBAPP_URL
+
+    if webapp_type == "evaluacion":
+        button = InlineKeyboardButton(
+            text="📝 Abrir Autoevaluación",
+            web_app=WebAppInfo(url=f"{webapp_url}/evaluacion")
+        )
+    elif webapp_type == "pedido":
+        button = InlineKeyboardButton(
+            text="🛒 Abrir Pedido",
+            web_app=WebAppInfo(url=f"{webapp_url}/pedido")
+        )
+    else:
+        raise ValueError(f"Unknown webapp type: {webapp_type}")
+
+    return InlineKeyboardMarkup([[button]])
 
 
 # ==================== COMANDOS ====================
@@ -455,10 +477,34 @@ async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
                 "Selecciona una opción:\n"
                 "• 📸 *Enviar Foto* - Envía evidencia de aplicación\n"
                 "• 📊 *Mi Estado* - Ve tu progreso y score\n"
+                "• 📝 *Autoevaluación* - Realiza autoevaluación\n"
+                "• 🛒 *Pedir Producto* - Solicita productos\n"
                 "• 📍 *Compartir Ubicación* - Para validar tu posición\n"
                 "• ❓ *Ayuda* - Información sobre el bot",
                 parse_mode="Markdown",
                 reply_markup=get_main_keyboard()
+            )
+        elif text == "📝 Autoevaluación":
+            # Enviar inline keyboard con botón WebApp (que SÍ pasa initData)
+            logger.info(f"Procesando: Autoevaluación para user_id={user_id}")
+            await update.message.reply_text(
+                "📝 *Autoevaluación de Compliance*\n\n"
+                "Responde las preguntas sobre el estado de las instalaciones "
+                "y el cumplimiento de los procedimientos.\n\n"
+                "Presiona el botón para comenzar:",
+                parse_mode="Markdown",
+                reply_markup=get_webapp_inline_keyboard("evaluacion")
+            )
+        elif text == "🛒 Pedir Producto":
+            # Enviar inline keyboard con botón WebApp (que SÍ pasa initData)
+            logger.info(f"Procesando: Pedir Producto para user_id={user_id}")
+            await update.message.reply_text(
+                "🛒 *Solicitud de Productos*\n\n"
+                "Selecciona los productos que necesitas y firma "
+                "digitalmente tu pedido.\n\n"
+                "Presiona el botón para comenzar:",
+                parse_mode="Markdown",
+                reply_markup=get_webapp_inline_keyboard("pedido")
             )
         else:
             logger.warning(f"Botón no reconocido: '{text}' de user_id={user_id}")
@@ -886,7 +932,8 @@ def setup_handlers(application: Application):
     )
 
     # Handler de botones de texto del teclado - PRIORIDAD ALTA
-    button_filter = filters.Regex(r'^(📸 Enviar Foto|📸 Enviar Foto 🔴|📊 Mi Estado|❓ Ayuda|❌ Cancelar|🌀 Menú)$')
+    # Incluye botones de WebApp que ahora son texto normal (se manejan enviando inline keyboards)
+    button_filter = filters.Regex(r'^(📸 Enviar Foto|📸 Enviar Foto 🔴|📊 Mi Estado|❓ Ayuda|❌ Cancelar|🌀 Menú|📝 Autoevaluación|🛒 Pedir Producto)$')
     application.add_handler(
         MessageHandler(button_filter, handle_text_buttons),
         group=-1
