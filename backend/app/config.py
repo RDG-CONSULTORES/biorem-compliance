@@ -37,6 +37,12 @@ class Settings(BaseSettings):
         description="URL para webhook de Telegram (para producción)"
     )
 
+    # Telegram Web App
+    WEBAPP_URL: str = Field(
+        default="https://biorem-compliance-front-end-production.up.railway.app/webapp",
+        description="URL base de la Mini Web App de Telegram"
+    )
+
     # Anthropic (Claude Vision)
     ANTHROPIC_API_KEY: str = Field(
         default="",

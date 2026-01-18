@@ -6,7 +6,7 @@ Incluye Photo Guard para verificación de autenticidad.
 """
 import logging
 from datetime import datetime
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, WebAppInfo
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -71,8 +71,24 @@ def get_main_keyboard(has_pending: bool = False) -> ReplyKeyboardMarkup:
     """
     photo_text = "📸 Enviar Foto" + (" 🔴" if has_pending else "")
 
+    # URL base de la Web App
+    webapp_url = settings.WEBAPP_URL
+
     keyboard = [
+        # Fila 1: Acciones principales
         [KeyboardButton(photo_text), KeyboardButton("📊 Mi Estado")],
+        # Fila 2: Web Apps
+        [
+            KeyboardButton(
+                "📝 Autoevaluación",
+                web_app=WebAppInfo(url=f"{webapp_url}/evaluacion")
+            ),
+            KeyboardButton(
+                "🛒 Pedir Producto",
+                web_app=WebAppInfo(url=f"{webapp_url}/pedido")
+            )
+        ],
+        # Fila 3: Ubicación y utilidades
         [KeyboardButton("📍 Compartir Ubicación", request_location=True)],
         [KeyboardButton("🌀 Menú"), KeyboardButton("❓ Ayuda")]
     ]
