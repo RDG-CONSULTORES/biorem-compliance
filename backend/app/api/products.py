@@ -61,6 +61,57 @@ async def list_categories(
     return {"categories": sorted(categories)}
 
 
+@router.post("/seed-biorem")
+async def seed_biorem_catalog(db: AsyncSession = Depends(get_db)):
+    """
+    Carga el catálogo completo de productos Biorem.
+
+    Datos extraídos de: https://biorem.mx/productos-de-limpieza/
+
+    Es idempotente: verifica por SKU antes de agregar.
+    """
+    # Importar datos del catálogo
+    from app.data.biorem_catalog import BIOREM_PRODUCTS
+
+    added = 0
+    skipped = 0
+    errors = []
+
+    for product_data in BIOREM_PRODUCTS:
+        sku = product_data["sku"]
+        name = product_data["name"]
+
+        try:
+            # Verificar si ya existe
+            result = await db.execute(
+                select(Product).where(Product.sku == sku)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                skipped += 1
+                continue
+
+            # Crear nuevo producto
+            product = Product(**product_data)
+            db.add(product)
+            await db.flush()
+            added += 1
+
+        except Exception as e:
+            errors.append(f"{sku}: {str(e)}")
+
+    await db.commit()
+
+    return {
+        "message": f"Catálogo Biorem cargado",
+        "added": added,
+        "skipped": skipped,
+        "errors": errors,
+        "total_in_catalog": len(BIOREM_PRODUCTS)
+    }
+
+
 @router.get("/{product_id}", response_model=ProductResponse)
 async def get_product(
     product_id: int,
