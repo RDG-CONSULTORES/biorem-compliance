@@ -200,21 +200,29 @@ export default function EvaluacionPage() {
     let cancelled = false;
 
     const loadUserContext = async (telegramId: number) => {
+      const url = `${API_URL}/api/webapp/user-context/${telegramId}`;
+      console.log("[API Debug] Fetching:", url);
+
       try {
-        const response = await fetch(`${API_URL}/api/webapp/user-context/${telegramId}`);
+        const response = await fetch(url);
+        console.log("[API Debug] Response status:", response.status);
 
         if (!response.ok) {
+          const errorText = await response.text();
+          console.log("[API Debug] Error response:", errorText);
+
           if (response.status === 404) {
             setInitError(
               "Tu cuenta no está vinculada.\n\nUsa el comando /start en el bot de Telegram y proporciona tu código de invitación."
             );
           } else {
-            setInitError("Error al cargar tu información. Intenta de nuevo.");
+            setInitError(`Error del servidor: ${response.status}. ${errorText}`);
           }
           return;
         }
 
         const context: UserContext = await response.json();
+        console.log("[API Debug] Context loaded:", context.name);
         setUserContext(context);
 
         // Prellenar nombre del firmante
@@ -233,9 +241,10 @@ export default function EvaluacionPage() {
           setInitError("No tienes ubicaciones asignadas. Contacta a tu administrador.");
         }
       } catch (err) {
-        console.error("Error loading user context:", err);
+        console.error("[API Debug] Fetch error:", err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
         if (!cancelled) {
-          setInitError("Error de conexión. Verifica tu internet e intenta de nuevo.");
+          setInitError(`Error de conexión: ${errorMsg}\n\nURL: ${url}\nTelegram ID: ${telegramId}`);
         }
       }
     };

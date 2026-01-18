@@ -168,20 +168,28 @@ export default function PedidoPage() {
     if (!telegramId) return;
 
     const loadContext = async () => {
+      const url = `${API_URL}/api/webapp/user-context/${telegramId}`;
+      console.log("[API Debug Pedido] Fetching:", url);
+
       try {
-        const response = await fetch(`${API_URL}/api/webapp/user-context/${telegramId}`);
+        const response = await fetch(url);
+        console.log("[API Debug Pedido] Response status:", response.status);
 
         if (!response.ok) {
+          const errorText = await response.text();
+          console.log("[API Debug Pedido] Error response:", errorText);
+
           if (response.status === 404) {
             setError("Tu cuenta no está vinculada. Usa /start en el bot primero.");
           } else {
-            setError("Error al cargar tu información");
+            setError(`Error del servidor: ${response.status}. ${errorText}`);
           }
           setStep("error");
           return;
         }
 
         const context: UserContext = await response.json();
+        console.log("[API Debug Pedido] Context loaded:", context.name);
         setUserContext(context);
         setSignerName(context.name);
 
@@ -200,7 +208,9 @@ export default function PedidoPage() {
           setStep("location");
         }
       } catch (err) {
-        setError("Error de conexión");
+        console.error("[API Debug Pedido] Fetch error:", err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        setError(`Error de conexión: ${errorMsg}\n\nURL: ${url}\nTelegram ID: ${telegramId}`);
         setStep("error");
       }
     };
