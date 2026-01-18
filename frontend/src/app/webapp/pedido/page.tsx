@@ -28,7 +28,9 @@ import {
   hapticFeedback,
 } from "@/lib/telegram";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://resilient-strength-production-6673.up.railway.app";
+// Ensure HTTPS is always used (env var might have http://)
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || "https://resilient-strength-production-6673.up.railway.app";
+const API_URL = rawApiUrl.replace(/^http:\/\//i, "https://");
 
 // ==================== TYPES ====================
 

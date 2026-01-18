@@ -162,7 +162,9 @@ const DEFAULT_TEMPLATE: { areas: Area[]; passingScore: number } = {
 
 type Step = "loading" | "location-select" | "questions" | "signature" | "submitting" | "complete";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://resilient-strength-production-6673.up.railway.app";
+// Ensure HTTPS is always used (env var might have http://)
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || "https://resilient-strength-production-6673.up.railway.app";
+const API_URL = rawApiUrl.replace(/^http:\/\//i, "https://");
 
 export default function EvaluacionPage() {
   // Estado de carga inicial y contexto de usuario
