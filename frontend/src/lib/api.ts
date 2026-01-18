@@ -1,6 +1,8 @@
 // Configuración del cliente API para conectar con el backend
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://resilient-strength-production-6673.up.railway.app'
+// Ensure HTTPS is always used in production
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://resilient-strength-production-6673.up.railway.app'
+const API_URL = rawApiUrl.replace(/^http:\/\//i, 'https://')
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type QueryParams = Record<string, any>
