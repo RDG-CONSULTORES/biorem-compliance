@@ -322,23 +322,29 @@ Problemas? Contacta a tu administrador.
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler para recibir ubicación del usuario (Photo Guard)."""
-    user = update.effective_user
-    telegram_id = str(user.id)
-    location = update.message.location
-
-    logger.info(f"=== UBICACIÓN RECIBIDA de user_id={user.id} ===")
-    logger.info(f"Lat: {location.latitude}, Lon: {location.longitude}")
-
-    # Respuesta inmediata para evitar timeout
-    await update.message.reply_text("📍 Procesando ubicación...")
+    logger.info("!!! HANDLE_LOCATION CALLED !!!")
 
     try:
+        user = update.effective_user
+        telegram_id = str(user.id)
+        location = update.message.location
+
+        logger.info(f"=== UBICACIÓN RECIBIDA de user_id={user.id} ===")
+        logger.info(f"Lat: {location.latitude}, Lon: {location.longitude}")
+
+        # PASO 1: Respuesta inmediata
+        logger.info("Enviando respuesta inmediata...")
+        await update.message.reply_text("📍 Procesando ubicación...")
+        logger.info("Respuesta inmediata enviada OK")
+
+        # PASO 2: Guardar en base de datos
+        logger.info("Conectando a DB...")
         async with AsyncSessionLocal() as db:
             logger.info("Conexión a DB establecida")
 
             # Buscar contacto
             contact = await get_contact_by_telegram_id(telegram_id, db)
-            logger.info(f"Contact encontrado: {contact is not None}, id={contact.id if contact else None}")
+            logger.info(f"Contact encontrado: {contact is not None}")
 
             if not contact:
                 logger.warning(f"Usuario {telegram_id} no vinculado")
@@ -349,68 +355,53 @@ async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 return
 
-            # Guardar ubicación usando SQL directo para evitar problemas de ORM
-            logger.info("Guardando ubicación con SQL directo...")
+            # Guardar ubicación
+            logger.info("Ejecutando UPDATE...")
             from sqlalchemy import text
             await db.execute(
                 text("""
                     UPDATE contacts
                     SET last_known_latitude = :lat,
                         last_known_longitude = :lon,
-                        last_location_at = :now,
-                        last_interaction_at = :now
+                        last_location_at = NOW(),
+                        last_interaction_at = NOW()
                     WHERE telegram_id = :telegram_id
                 """),
                 {
                     "lat": location.latitude,
                     "lon": location.longitude,
-                    "now": datetime.utcnow(),
                     "telegram_id": telegram_id
                 }
             )
-
-            logger.info("Haciendo commit a DB...")
+            logger.info("UPDATE ejecutado, haciendo commit...")
             await db.commit()
-            logger.info("Commit exitoso")
+            logger.info("Commit exitoso!")
 
-            # Verificar si estaba esperando ubicación para foto
-            awaiting = context.user_data.get('awaiting_location_for_photo', False)
-            logger.info(f"awaiting_location_for_photo: {awaiting}")
+        # PASO 3: Guardar en contexto y responder
+        context.user_data['awaiting_location_for_photo'] = False
+        context.user_data['photo_location'] = {
+            'latitude': location.latitude,
+            'longitude': location.longitude,
+            'timestamp': datetime.utcnow()
+        }
 
-            if awaiting:
-                context.user_data['awaiting_location_for_photo'] = False
-                context.user_data['photo_location'] = {
-                    'latitude': location.latitude,
-                    'longitude': location.longitude,
-                    'timestamp': datetime.utcnow()
-                }
-
-                logger.info("Enviando confirmación (esperaba ubicación para foto)")
-                await update.message.reply_text(
-                    "✅ Ubicación recibida.\n\n"
-                    "Ahora envía la foto de evidencia de la aplicación del producto.",
-                    reply_markup=get_main_keyboard()
-                )
-            else:
-                logger.info("Enviando confirmación (ubicación general)")
-                await update.message.reply_text(
-                    "✅ Ubicación guardada.\n\n"
-                    "Cuando envíes una foto, se verificará que estés en el lugar correcto.",
-                    reply_markup=get_main_keyboard()
-                )
-
-            logger.info("=== UBICACIÓN PROCESADA EXITOSAMENTE ===")
+        logger.info("Enviando confirmación final...")
+        await update.message.reply_text(
+            "✅ Ubicación recibida!\n\n"
+            "Ahora envía la foto de evidencia.",
+            reply_markup=get_main_keyboard()
+        )
+        logger.info("=== UBICACIÓN PROCESADA EXITOSAMENTE ===")
 
     except Exception as e:
         logger.error(f"!!! ERROR en handle_location: {type(e).__name__}: {e}", exc_info=True)
         try:
             await update.message.reply_text(
-                f"Error: {type(e).__name__}\n"
-                "Por favor intenta de nuevo.",
+                f"Error procesando ubicación: {type(e).__name__}",
                 reply_markup=get_main_keyboard()
             )
-        except Exception as reply_error:
-            logger.error(f"Error enviando mensaje de error: {reply_error}")
+        except:
+            pass
 
 
 async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):

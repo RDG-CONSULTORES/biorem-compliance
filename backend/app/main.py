@@ -314,18 +314,38 @@ async def telegram_webhook(request: Request):
     try:
         # Parsear el update de Telegram
         data = await request.json()
-        logger.info(f"Webhook received update_id: {data.get('update_id', 'unknown')}")
+
+        # Log detallado del tipo de update
+        update_id = data.get('update_id', 'unknown')
+        message = data.get('message', {})
+        has_location = 'location' in message
+        has_photo = 'photo' in message
+        has_text = 'text' in message
+        text_content = message.get('text', '')[:50] if has_text else None
+
+        logger.info(f"=== WEBHOOK UPDATE {update_id} ===")
+        logger.info(f"  has_location: {has_location}")
+        logger.info(f"  has_photo: {has_photo}")
+        logger.info(f"  has_text: {has_text} -> {text_content}")
+
+        if has_location:
+            loc = message.get('location', {})
+            logger.info(f"  LOCATION: lat={loc.get('latitude')}, lon={loc.get('longitude')}")
 
         # Procesar el update
         from telegram import Update
         update = Update.de_json(data, _telegram_app.bot)
+
+        logger.info(f"  Processing update with bot application...")
         await _telegram_app.process_update(update)
+        logger.info(f"  Update {update_id} processed successfully!")
 
         return {"ok": True}
 
     except Exception as e:
-        logger.error(f"Error processing webhook: {e}", exc_info=True)
-        return {"ok": False, "error": str(e)}
+        logger.error(f"!!! WEBHOOK ERROR: {type(e).__name__}: {e}", exc_info=True)
+        # Aún retornar ok para que Telegram no reintente
+        return {"ok": True}
 
 
 # Incluir routers de API
