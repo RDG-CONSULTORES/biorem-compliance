@@ -95,25 +95,51 @@ export default function PedidoPage() {
   // ==================== INIT ====================
 
   useEffect(() => {
-    const tg = getTelegramWebApp();
-    if (tg) {
-      tg.ready();
-      tg.expand();
+    let attempts = 0;
+    const maxAttempts = 20; // 2 seconds max wait
 
-      setupBackButton(() => {
-        handleBack();
-      });
+    const initTelegram = () => {
+      const tg = getTelegramWebApp();
+
+      if (tg) {
+        tg.ready();
+        tg.expand();
+
+        setupBackButton(() => {
+          handleBack();
+        });
+      }
+
+      const id = getTelegramUserId();
+      if (id) {
+        setTelegramId(String(id));
+        return true;
+      }
+      return false;
+    };
+
+    // Try immediately
+    if (initTelegram()) {
+      return () => {
+        hideBackButton();
+        hideMainButton();
+      };
     }
 
-    const id = getTelegramUserId();
-    if (id) {
-      setTelegramId(String(id));
-    } else {
-      setError("No se pudo obtener tu ID de Telegram");
-      setStep("error");
-    }
+    // Retry with polling if SDK not ready yet
+    const interval = setInterval(() => {
+      attempts++;
+      if (initTelegram()) {
+        clearInterval(interval);
+      } else if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        setError("No se pudo obtener tu ID de Telegram. Asegúrate de abrir esta app desde el bot de Telegram.");
+        setStep("error");
+      }
+    }, 100);
 
     return () => {
+      clearInterval(interval);
       hideBackButton();
       hideMainButton();
     };

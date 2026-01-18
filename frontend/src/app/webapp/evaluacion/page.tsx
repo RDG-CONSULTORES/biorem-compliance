@@ -195,14 +195,11 @@ export default function EvaluacionPage() {
 
   // Cargar contexto del usuario al iniciar
   useEffect(() => {
-    const loadUserContext = async () => {
-      const telegramId = getTelegramUserId();
+    let attempts = 0;
+    const maxAttempts = 20; // 2 seconds max wait
+    let cancelled = false;
 
-      if (!telegramId) {
-        setInitError("No se pudo obtener tu ID de Telegram. Abre esta app desde el bot.");
-        return;
-      }
-
+    const loadUserContext = async (telegramId: number) => {
       try {
         const response = await fetch(`${API_URL}/api/webapp/user-context/${telegramId}`);
 
@@ -237,18 +234,50 @@ export default function EvaluacionPage() {
         }
       } catch (err) {
         console.error("Error loading user context:", err);
-        setInitError("Error de conexión. Verifica tu internet e intenta de nuevo.");
+        if (!cancelled) {
+          setInitError("Error de conexión. Verifica tu internet e intenta de nuevo.");
+        }
       }
     };
 
-    // Inicializar Telegram
-    const tg = getTelegramWebApp();
-    if (tg) {
-      tg.ready();
-      tg.expand();
+    const tryInit = () => {
+      // Inicializar Telegram
+      const tg = getTelegramWebApp();
+      if (tg) {
+        tg.ready();
+        tg.expand();
+      }
+
+      const telegramId = getTelegramUserId();
+      if (telegramId) {
+        loadUserContext(telegramId);
+        return true;
+      }
+      return false;
+    };
+
+    // Try immediately
+    if (!tryInit()) {
+      // Retry with polling if SDK not ready yet
+      const interval = setInterval(() => {
+        attempts++;
+        if (tryInit()) {
+          clearInterval(interval);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(interval);
+          setInitError("No se pudo obtener tu ID de Telegram. Asegúrate de abrir esta app desde el bot de Telegram.");
+        }
+      }, 100);
+
+      return () => {
+        cancelled = true;
+        clearInterval(interval);
+      };
     }
 
-    loadUserContext();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Configurar botón de retroceso según el paso actual
