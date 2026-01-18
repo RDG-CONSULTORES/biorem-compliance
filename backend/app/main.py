@@ -60,6 +60,9 @@ async def ensure_photo_guard_columns():
         "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS distance_from_expected DOUBLE PRECISION",
         "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS time_diff_minutes INTEGER",
         "ALTER TABLE compliance_records ADD COLUMN IF NOT EXISTS ai_appears_screenshot BOOLEAN",
+
+        # Fix: Allow photos without pending reminder (location_id can be null)
+        "ALTER TABLE compliance_records ALTER COLUMN location_id DROP NOT NULL",
     ]
 
     logger.info("=== INICIANDO VERIFICACIÓN DE COLUMNAS PHOTO GUARD ===")

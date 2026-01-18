@@ -17,8 +17,8 @@ class ComplianceRecord(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # Ubicación y contacto que reportó
-    location_id = Column(Integer, ForeignKey("locations.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Ubicación y contacto que reportó (nullable para fotos sin recordatorio)
+    location_id = Column(Integer, ForeignKey("locations.id", ondelete="CASCADE"), nullable=True, index=True)
     contact_id = Column(Integer, ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Recordatorio asociado (si aplica)

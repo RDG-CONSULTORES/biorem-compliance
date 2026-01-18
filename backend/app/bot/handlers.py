@@ -74,13 +74,14 @@ def get_main_keyboard(has_pending: bool = False) -> ReplyKeyboardMarkup:
     keyboard = [
         [KeyboardButton(photo_text), KeyboardButton("📊 Mi Estado")],
         [KeyboardButton("📍 Compartir Ubicación", request_location=True)],
-        [KeyboardButton("❓ Ayuda")]
+        [KeyboardButton("🏠 Menú"), KeyboardButton("❓ Ayuda")]
     ]
 
     return ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,
         one_time_keyboard=False,
+        is_persistent=True,  # Mantiene el teclado siempre visible
         input_field_placeholder="Selecciona una opción o envía una foto"
     )
 
@@ -426,6 +427,21 @@ async def handle_text_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE
             context.user_data['awaiting_location_for_photo'] = False
             await update.message.reply_text(
                 "Operación cancelada.",
+                reply_markup=get_main_keyboard()
+            )
+        elif text == "🏠 Menú":
+            logger.info(f"Procesando: Menú Principal para user_id={user_id}")
+            # Limpiar cualquier estado pendiente
+            context.user_data.pop('awaiting_location_for_photo', None)
+            context.user_data.pop('photo_location', None)
+            await update.message.reply_text(
+                "🏠 *Menú Principal*\n\n"
+                "Selecciona una opción:\n"
+                "• 📸 *Enviar Foto* - Envía evidencia de aplicación\n"
+                "• 📊 *Mi Estado* - Ve tu progreso y score\n"
+                "• 📍 *Compartir Ubicación* - Para validar tu posición\n"
+                "• ❓ *Ayuda* - Información sobre el bot",
+                parse_mode="Markdown",
                 reply_markup=get_main_keyboard()
             )
         else:
@@ -854,7 +870,7 @@ def setup_handlers(application: Application):
     )
 
     # Handler de botones de texto del teclado - PRIORIDAD ALTA
-    button_filter = filters.Regex(r'^(📸 Enviar Foto|📸 Enviar Foto 🔴|📊 Mi Estado|❓ Ayuda|❌ Cancelar)$')
+    button_filter = filters.Regex(r'^(📸 Enviar Foto|📸 Enviar Foto 🔴|📊 Mi Estado|❓ Ayuda|❌ Cancelar|🏠 Menú)$')
     application.add_handler(
         MessageHandler(button_filter, handle_text_buttons),
         group=-1
