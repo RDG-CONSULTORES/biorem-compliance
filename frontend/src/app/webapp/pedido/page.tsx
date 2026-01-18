@@ -93,6 +93,9 @@ export default function PedidoPage() {
   // Submitting
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Category filter
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
   // ==================== INIT ====================
 
   useEffect(() => {
@@ -461,6 +464,14 @@ export default function PedidoPage() {
   if (step === "products") {
     const totalItems = getTotalItems();
 
+    // Get unique categories from products
+    const categories = Array.from(new Set(products.map((p) => p.category).filter(Boolean))) as string[];
+
+    // Filter products by selected category
+    const filteredProducts = selectedCategory
+      ? products.filter((p) => p.category === selectedCategory)
+      : products;
+
     return (
       <div className="flex flex-col min-h-screen">
         <header className="flex items-center gap-3 p-4 border-b sticky top-0 bg-background z-10">
@@ -473,14 +484,54 @@ export default function PedidoPage() {
           </div>
         </header>
 
+        {/* Category Tabs */}
+        <div className="border-b sticky top-[73px] bg-background z-10">
+          <div className="flex">
+            <button
+              onClick={() => {
+                hapticFeedback("light");
+                setSelectedCategory(null);
+              }}
+              className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                selectedCategory === null
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Todos
+            </button>
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => {
+                  hapticFeedback("light");
+                  setSelectedCategory(cat);
+                }}
+                className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${
+                  selectedCategory === cat
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {cat === "Biotecnológico" ? "Biotec." : cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex-1 p-4 pb-24 space-y-3">
-          {products.length === 0 ? (
+          {/* Product count */}
+          <p className="text-xs text-muted-foreground">
+            {filteredProducts.length} producto{filteredProducts.length !== 1 ? "s" : ""}
+          </p>
+
+          {filteredProducts.length === 0 ? (
             <div className="text-center py-12">
               <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">No hay productos disponibles</p>
+              <p className="text-muted-foreground">No hay productos en esta categoría</p>
             </div>
           ) : (
-            products.map((product) => {
+            filteredProducts.map((product) => {
               const qty = getQuantity(product.id);
 
               return (
