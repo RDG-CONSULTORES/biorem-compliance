@@ -921,62 +921,88 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def start_bot():
-    """Inicia el bot de Telegram."""
-    import asyncio
+    """Inicia el bot de Telegram usando webhooks para evitar conflictos."""
     import httpx
 
     if not settings.TELEGRAM_BOT_TOKEN:
         logger.warning("TELEGRAM_BOT_TOKEN not configured, bot will not start")
         return None
 
+    # Determinar la URL del webhook
+    webhook_url = None
+    if settings.TELEGRAM_WEBHOOK_URL:
+        webhook_url = settings.TELEGRAM_WEBHOOK_URL
+    elif hasattr(settings, 'RAILWAY_PUBLIC_DOMAIN') and settings.RAILWAY_PUBLIC_DOMAIN:
+        webhook_url = f"https://{settings.RAILWAY_PUBLIC_DOMAIN}/webhook/telegram"
+    else:
+        # Intentar obtener la URL de Railway automáticamente
+        import os
+        railway_url = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
+        if railway_url:
+            webhook_url = f"https://{railway_url}/webhook/telegram"
+
     try:
-        # PASO 1: Limpiar cualquier webhook o conexión anterior
-        logger.info("Cleaning up previous bot connections...")
-        async with httpx.AsyncClient() as client:
-            # Eliminar webhook si existe
-            delete_webhook_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/deleteWebhook?drop_pending_updates=true"
-            response = await client.get(delete_webhook_url)
-            logger.info(f"Delete webhook response: {response.json()}")
-
-            # Esperar un momento para que Telegram libere la conexión
-            await asyncio.sleep(2)
-
-            # Forzar cierre de cualquier getUpdates pendiente
-            close_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/close"
-            try:
-                response = await client.get(close_url)
-                logger.info(f"Close bot response: {response.json()}")
-            except Exception as e:
-                logger.debug(f"Close response (expected): {e}")
-
-            await asyncio.sleep(3)
-
-        # PASO 2: Construir e iniciar el bot
         application = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).build()
         setup_handlers(application)
         application.add_error_handler(error_handler)
 
-        logger.info("Starting Telegram bot in polling mode...")
         await application.initialize()
         await application.start()
 
-        # Configuración de polling
-        await application.updater.start_polling(
-            drop_pending_updates=True,
-            allowed_updates=["message", "callback_query"],
-            read_timeout=30,
-            write_timeout=30,
-            connect_timeout=30,
-            pool_timeout=30,
-        )
+        if webhook_url:
+            # MODO WEBHOOK - Sin conflictos
+            logger.info(f"Setting up webhook at: {webhook_url}")
 
-        logger.info("Telegram bot started successfully!")
+            # Configurar webhook en Telegram
+            async with httpx.AsyncClient() as client:
+                set_webhook_url = f"https://api.telegram.org/bot{settings.TELEGRAM_BOT_TOKEN}/setWebhook"
+                response = await client.post(set_webhook_url, json={
+                    "url": webhook_url,
+                    "allowed_updates": ["message", "callback_query"],
+                    "drop_pending_updates": True
+                })
+                result = response.json()
+                logger.info(f"Webhook setup response: {result}")
+
+                if result.get("ok"):
+                    logger.info("Telegram bot started in WEBHOOK mode - no conflicts possible!")
+                else:
+                    logger.error(f"Failed to set webhook: {result}")
+                    # Fallback a polling
+                    return await _start_polling_mode(application)
+        else:
+            # MODO POLLING - Solo si no hay webhook URL disponible
+            logger.warning("No webhook URL available, falling back to polling mode")
+            return await _start_polling_mode(application)
+
         return application
 
     except Exception as e:
-        logger.error(f"Failed to start bot: {type(e).__name__}: {e}")
+        logger.error(f"Failed to start bot: {type(e).__name__}: {e}", exc_info=True)
+        return None
+
+
+async def _start_polling_mode(application):
+    """Inicia el bot en modo polling (backup)."""
+    import asyncio
+
+    logger.info("Starting bot in POLLING mode...")
+
+    # Esperar para evitar conflictos con instancia anterior
+    await asyncio.sleep(5)
+
+    try:
+        await application.updater.start_polling(
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query"],
+        )
+        logger.info("Telegram bot started in polling mode")
+        return application
+    except Exception as e:
         if "Conflict" in str(e):
-            logger.warning("Bot conflict detected - will retry after delay")
+            logger.error("Polling conflict - another instance is running. Bot disabled.")
+        else:
+            logger.error(f"Polling failed: {e}")
         return None
 
 

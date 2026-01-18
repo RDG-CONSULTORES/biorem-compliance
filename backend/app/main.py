@@ -143,6 +143,8 @@ async def lifespan(app: FastAPI):
 
                 telegram_app = await start_bot()
                 if telegram_app:
+                    # Guardar referencia global para el webhook
+                    set_telegram_app(telegram_app)
                     await start_scheduler(telegram_app.bot)
                     logger.info("Telegram bot and scheduler started successfully!")
                 else:
@@ -266,6 +268,45 @@ async def root():
         "version": settings.APP_VERSION,
         "docs": "/docs" if settings.DEBUG else "Disabled in production"
     }
+
+
+# Variable global para almacenar la aplicación del bot
+_telegram_app = None
+
+
+def set_telegram_app(app):
+    """Guarda la referencia a la aplicación de Telegram."""
+    global _telegram_app
+    _telegram_app = app
+
+
+# Webhook endpoint para Telegram
+from fastapi import Request
+
+@app.post("/webhook/telegram")
+async def telegram_webhook(request: Request):
+    """Recibe updates de Telegram via webhook."""
+    global _telegram_app
+
+    if not _telegram_app:
+        logger.warning("Webhook received but bot not initialized")
+        return {"ok": False, "error": "Bot not initialized"}
+
+    try:
+        # Parsear el update de Telegram
+        data = await request.json()
+        logger.info(f"Webhook received update_id: {data.get('update_id', 'unknown')}")
+
+        # Procesar el update
+        from telegram import Update
+        update = Update.de_json(data, _telegram_app.bot)
+        await _telegram_app.process_update(update)
+
+        return {"ok": True}
+
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}", exc_info=True)
+        return {"ok": False, "error": str(e)}
 
 
 # Incluir routers de API
