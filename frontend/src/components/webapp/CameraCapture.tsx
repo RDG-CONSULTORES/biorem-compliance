@@ -40,27 +40,59 @@ export function CameraCapture({
   const [location, setLocation] = useState<GeolocationCoordinates | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationLoading, setLocationLoading] = useState(true);
 
   // Capturar ubicación al montar
   useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          setLocation(pos.coords);
-          setLocationError(null);
-        },
-        (err) => {
-          console.error("Geolocation error:", err);
-          setLocationError("No se pudo obtener ubicación");
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 60000,
-        }
-      );
+    if (!("geolocation" in navigator)) {
+      setLocationError("Geolocalización no disponible");
+      setLocationLoading(false);
+      return;
     }
-  }, []);
+
+    // Intentar obtener ubicación con timeout extendido
+    const timeoutId = setTimeout(() => {
+      if (!location) {
+        setLocationError("Tiempo agotado - continúa sin ubicación");
+        setLocationLoading(false);
+      }
+    }, 20000); // 20 segundos máximo de espera
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        clearTimeout(timeoutId);
+        setLocation(pos.coords);
+        setLocationError(null);
+        setLocationLoading(false);
+      },
+      (err) => {
+        clearTimeout(timeoutId);
+        console.error("Geolocation error:", err);
+        // Mensajes específicos según el tipo de error
+        switch (err.code) {
+          case err.PERMISSION_DENIED:
+            setLocationError("Permiso de ubicación denegado");
+            break;
+          case err.POSITION_UNAVAILABLE:
+            setLocationError("Ubicación no disponible");
+            break;
+          case err.TIMEOUT:
+            setLocationError("Tiempo agotado obteniendo ubicación");
+            break;
+          default:
+            setLocationError("Error de ubicación desconocido");
+        }
+        setLocationLoading(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000, // 15 segundos para el API
+        maximumAge: 60000, // Cache de 1 minuto
+      }
+    );
+
+    return () => clearTimeout(timeoutId);
+  }, [location]);
 
   // Agregar marca de agua a la imagen
   const addWatermark = useCallback(
@@ -192,15 +224,23 @@ export function CameraCapture({
     <div className={`camera-capture ${className}`}>
       {/* Indicador de ubicación */}
       <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-        <MapPin className="h-3 w-3" />
-        {location ? (
-          <span className="text-green-600">
-            Ubicación: {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
-          </span>
-        ) : locationError ? (
-          <span className="text-amber-600">{locationError}</span>
+        {locationLoading ? (
+          <>
+            <Loader2 className="h-3 w-3 animate-spin" />
+            <span>Obteniendo ubicación...</span>
+          </>
+        ) : location ? (
+          <>
+            <MapPin className="h-3 w-3 text-green-600" />
+            <span className="text-green-600">
+              Ubicación: {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
+            </span>
+          </>
         ) : (
-          <span>Obteniendo ubicación...</span>
+          <>
+            <MapPin className="h-3 w-3 text-amber-600" />
+            <span className="text-amber-600">{locationError || "Sin ubicación"}</span>
+          </>
         )}
       </div>
 

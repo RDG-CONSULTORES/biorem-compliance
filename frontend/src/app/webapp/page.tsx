@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ClipboardCheck, Package, User, Loader2 } from "lucide-react";
-
-interface TelegramUser {
-  id: number;
-  first_name: string;
-  last_name?: string;
-  username?: string;
-  language_code?: string;
-}
+import {
+  getTelegramWebApp,
+  getTelegramUser,
+  getColorScheme,
+  hideMainButton,
+  hideBackButton,
+  type TelegramUser,
+} from "@/lib/telegram";
 
 interface WebAppData {
   user: TelegramUser | null;
@@ -30,7 +30,7 @@ export default function WebAppHome() {
     // Esperar a que Telegram SDK esté listo
     const initWebApp = () => {
       try {
-        const tg = (window as any).Telegram?.WebApp;
+        const tg = getTelegramWebApp();
 
         if (!tg) {
           setError("Esta app debe abrirse desde Telegram");
@@ -43,20 +43,18 @@ export default function WebAppHome() {
         // Expandir a pantalla completa
         tg.expand();
 
-        // Obtener datos del usuario
-        const user = tg.initDataUnsafe?.user;
+        // Obtener datos del usuario usando utilidades centralizadas
+        const user = getTelegramUser();
 
         setWebApp({
           user: user || null,
           isReady: true,
-          colorScheme: tg.colorScheme || "light",
+          colorScheme: getColorScheme(),
         });
 
-        // Configurar el botón principal (opcional)
-        tg.MainButton.hide();
-
-        // Habilitar botón de cerrar
-        tg.BackButton.hide();
+        // Ocultar botones usando utilidades centralizadas
+        hideMainButton();
+        hideBackButton();
       } catch (err) {
         console.error("Error initializing Telegram WebApp:", err);
         setError("Error al inicializar la app");
