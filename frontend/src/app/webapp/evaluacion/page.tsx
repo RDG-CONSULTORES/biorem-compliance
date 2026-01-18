@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { ArrowLeft, Check, X, Minus, Camera, Loader2, AlertCircle } from "lucide-react";
+import { ArrowLeft, Check, X, Minus, Camera, Loader2, AlertCircle, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SignaturePad } from "@/components/webapp/SignaturePad";
@@ -48,6 +48,24 @@ interface EvaluationState {
   signature: string | null;
   signerName: string;
   startedAt: Date;
+}
+
+// Contexto del usuario desde el backend
+interface UserLocation {
+  id: number;
+  name: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+interface UserContext {
+  contact_id: number;
+  name: string;
+  role: string;
+  client_id: number;
+  client_name: string;
+  locations: UserLocation[];
 }
 
 // Plantilla por defecto (mientras no carguemos del API)
@@ -142,10 +160,18 @@ const DEFAULT_TEMPLATE: { areas: Area[]; passingScore: number } = {
   ],
 };
 
-type Step = "questions" | "signature" | "submitting" | "complete";
+type Step = "loading" | "location-select" | "questions" | "signature" | "submitting" | "complete";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://resilient-strength-production-6673.up.railway.app";
 
 export default function EvaluacionPage() {
-  const [step, setStep] = useState<Step>("questions");
+  // Estado de carga inicial y contexto de usuario
+  const [userContext, setUserContext] = useState<UserContext | null>(null);
+  const [initError, setInitError] = useState<string | null>(null);
+  const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
+  const [selectedLocationName, setSelectedLocationName] = useState<string>("");
+
+  const [step, setStep] = useState<Step>("loading");
   const [state, setState] = useState<EvaluationState>({
     currentAreaIndex: 0,
     answers: {},
@@ -165,36 +191,87 @@ export default function EvaluacionPage() {
   const currentArea = template.areas[state.currentAreaIndex];
   const isLastArea = state.currentAreaIndex === template.areas.length - 1;
 
-  // Inicializar Telegram
+  // Cargar contexto del usuario al iniciar
   useEffect(() => {
+    const loadUserContext = async () => {
+      const telegramId = getTelegramUserId();
+
+      if (!telegramId) {
+        setInitError("No se pudo obtener tu ID de Telegram. Abre esta app desde el bot.");
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_URL}/api/webapp/user-context/${telegramId}`);
+
+        if (!response.ok) {
+          if (response.status === 404) {
+            setInitError(
+              "Tu cuenta no está vinculada.\n\nUsa el comando /start en el bot de Telegram y proporciona tu código de invitación."
+            );
+          } else {
+            setInitError("Error al cargar tu información. Intenta de nuevo.");
+          }
+          return;
+        }
+
+        const context: UserContext = await response.json();
+        setUserContext(context);
+
+        // Prellenar nombre del firmante
+        setState((s) => ({ ...s, signerName: context.name }));
+
+        // Si solo tiene una ubicación, seleccionarla automáticamente
+        if (context.locations.length === 1) {
+          setSelectedLocationId(context.locations[0].id);
+          setSelectedLocationName(context.locations[0].name);
+          setStep("questions");
+        } else if (context.locations.length > 1) {
+          // Múltiples ubicaciones: mostrar selector
+          setStep("location-select");
+        } else {
+          // Sin ubicaciones asignadas
+          setInitError("No tienes ubicaciones asignadas. Contacta a tu administrador.");
+        }
+      } catch (err) {
+        console.error("Error loading user context:", err);
+        setInitError("Error de conexión. Verifica tu internet e intenta de nuevo.");
+      }
+    };
+
+    // Inicializar Telegram
     const tg = getTelegramWebApp();
     if (tg) {
       tg.ready();
       tg.expand();
-
-      setupBackButton(() => {
-        if (step === "signature") {
-          setStep("questions");
-        } else if (state.currentAreaIndex > 0) {
-          setState((s) => ({ ...s, currentAreaIndex: s.currentAreaIndex - 1 }));
-        } else {
-          window.history.back();
-        }
-      });
-
-      // Prellenar nombre del usuario
-      const user = getTelegramUser();
-      if (user) {
-        const fullName = `${user.first_name}${user.last_name ? ` ${user.last_name}` : ""}`;
-        setState((s) => ({ ...s, signerName: fullName }));
-      }
     }
+
+    loadUserContext();
+  }, []);
+
+  // Configurar botón de retroceso según el paso actual
+  useEffect(() => {
+    const tg = getTelegramWebApp();
+    if (!tg || step === "loading") return;
+
+    setupBackButton(() => {
+      if (step === "signature") {
+        setStep("questions");
+      } else if (step === "questions" && state.currentAreaIndex > 0) {
+        setState((s) => ({ ...s, currentAreaIndex: s.currentAreaIndex - 1 }));
+      } else if (step === "questions" && userContext && userContext.locations.length > 1) {
+        // Volver al selector de ubicación si hay múltiples
+        setStep("location-select");
+      } else {
+        window.history.back();
+      }
+    });
 
     return () => {
       hideBackButton();
       hideMainButton();
     };
-  }, [step, state.currentAreaIndex]);
+  }, [step, state.currentAreaIndex, userContext]);
 
   // Manejar respuesta a pregunta
   const handleAnswer = useCallback(
@@ -310,13 +387,11 @@ export default function EvaluacionPage() {
         // Continuar sin ubicación
       }
 
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://resilient-strength-production-6673.up.railway.app";
-
       const response = await fetch(`${API_URL}/api/evaluations/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          location_id: 1, // TODO: Obtener del contexto del usuario
+          location_id: selectedLocationId,
           telegram_user_id: String(telegramId),
           answers: answersForApi,
           photos: state.photos.map((p) => ({
@@ -355,7 +430,7 @@ export default function EvaluacionPage() {
       setStep("signature");
       hapticFeedback("error");
     }
-  }, [state]);
+  }, [state, selectedLocationId]);
 
   // Cerrar y volver
   const handleClose = useCallback(() => {
@@ -367,7 +442,91 @@ export default function EvaluacionPage() {
     }
   }, []);
 
+  // Seleccionar ubicación
+  const handleSelectLocation = useCallback((location: UserLocation) => {
+    setSelectedLocationId(location.id);
+    setSelectedLocationName(location.name);
+    setStep("questions");
+    hapticFeedback("light");
+  }, []);
+
   // ==================== RENDER ====================
+
+  // Pantalla de carga inicial (verificando usuario)
+  if (step === "loading" && !initError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-6">
+        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
+        <p className="text-lg font-medium">Verificando cuenta...</p>
+        <p className="text-sm text-muted-foreground mt-2">
+          Un momento por favor.
+        </p>
+      </div>
+    );
+  }
+
+  // Pantalla de error (usuario no vinculado u otro error)
+  if (initError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center">
+        <div className="w-20 h-20 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center mb-6">
+          <AlertCircle className="h-10 w-10 text-red-600" />
+        </div>
+        <h1 className="text-xl font-bold mb-4">No se puede continuar</h1>
+        <p className="text-muted-foreground whitespace-pre-line mb-6 max-w-sm">
+          {initError}
+        </p>
+        <Button onClick={handleClose} variant="outline" size="lg">
+          Cerrar
+        </Button>
+      </div>
+    );
+  }
+
+  // Pantalla de selección de ubicación
+  if (step === "location-select" && userContext) {
+    return (
+      <div className="flex flex-col min-h-screen p-4">
+        <header className="text-center mb-6">
+          <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-gradient-to-br from-[#93d500] to-[#0083ad] flex items-center justify-center">
+            <MapPin className="h-8 w-8 text-white" />
+          </div>
+          <h1 className="text-xl font-bold">Selecciona la Ubicación</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            ¿Dónde realizarás la evaluación?
+          </p>
+        </header>
+
+        <div className="flex-1 space-y-3">
+          {userContext.locations.map((location) => (
+            <button
+              key={location.id}
+              onClick={() => handleSelectLocation(location)}
+              className="w-full flex items-center gap-4 p-4 rounded-xl bg-card border shadow-sm hover:shadow-md hover:border-primary transition-all text-left"
+            >
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <MapPin className="h-6 w-6 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="font-semibold truncate">{location.name}</h2>
+                {location.address && (
+                  <p className="text-sm text-muted-foreground truncate">
+                    {location.address}
+                  </p>
+                )}
+              </div>
+              <span className="text-muted-foreground">→</span>
+            </button>
+          ))}
+        </div>
+
+        <footer className="text-center text-xs text-muted-foreground mt-6 pb-4">
+          <p>{userContext.client_name}</p>
+          <p className="mt-1">{userContext.locations.length} ubicaciones disponibles</p>
+        </footer>
+      </div>
+    );
+  }
 
   // Pantalla de carga/enviando
   if (step === "submitting") {
@@ -419,6 +578,11 @@ export default function EvaluacionPage() {
             <p className="text-sm text-muted-foreground">
               Evaluación #{result.id}
             </p>
+            {selectedLocationName && (
+              <p className="text-sm">
+                Ubicación: <strong>{selectedLocationName}</strong>
+              </p>
+            )}
             <p className="text-sm">
               Firmada por: <strong>{state.signerName}</strong>
             </p>
@@ -551,6 +715,7 @@ export default function EvaluacionPage() {
             <h1 className="text-lg font-bold">{currentArea.name}</h1>
             <p className="text-xs text-muted-foreground">
               Área {state.currentAreaIndex + 1} de {template.areas.length}
+              {selectedLocationName && ` • ${selectedLocationName}`}
             </p>
           </div>
         </div>
