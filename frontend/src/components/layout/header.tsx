@@ -28,6 +28,7 @@ import {
   MapPin,
   Package,
   ClipboardCheck,
+  ShoppingCart,
   BarChart3,
   Settings,
   LogOut,
@@ -42,6 +43,7 @@ const navigation = [
   { name: "Ubicaciones", href: "/ubicaciones", icon: MapPin },
   { name: "Productos", href: "/productos", icon: Package },
   { name: "Compliance", href: "/compliance", icon: ClipboardCheck },
+  { name: "Pedidos", href: "/pedidos", icon: ShoppingCart },
   { name: "Reportes", href: "/reports", icon: BarChart3 },
 ]
 
